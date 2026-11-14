@@ -1,0 +1,20 @@
+{
+  "name": "speedgo",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "SpeedGo mobility platform: server, rider app, driver app and admin panel (Phase 1, local)",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "concurrently -k -n server,rider,driver,admin -c blue,green,yellow,magenta \"npm:dev -w @speedgo/server\" \"npm:dev -w @speedgo/rider\" \"npm:dev -w @speedgo/driver\" \"npm:dev -w @speedgo/admin\"",
+    "build": "npm run build -w @speedgo/rider -w @speedgo/driver -w @speedgo/admin",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test -w @speedgo/server",
+    "seed:demo": "npm run seed:demo -w @speedgo/server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "typescript": "^5.6.3"
+  },
+  "engines": { "node": ">=22" }
+}

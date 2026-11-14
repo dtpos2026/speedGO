@@ -155,7 +155,7 @@ export function Drive({ me, token, cfg, refresh, onLogout }: { me: Me; token: st
             <div><div className="title" style={{ fontSize: 22 }}>{online ? t('youOnline') : t('youOffline')}</div><div className="muted small">{online ? t('waiting') : t('goOnlineHint')}</div></div>
             <span className={`chip ${online ? 'chip-ok' : ''}`}>{online ? 'ONLINE' : 'OFFLINE'}</span>
           </div>
-          <button className={`btn btn-xl btn-block ${online ? 'btn-danger' : 'btn-ok'}`} style={{ marginTop: 14 }} disabled={busy} onClick={toggleOnline} aria-pressed={online}>
+          <button className={`btn btn-xl btn-block ${online ? 'btn-danger-ghost' : 'btn-primary'}`} style={{ marginTop: 14 }} disabled={busy} onClick={toggleOnline} aria-pressed={online}>
             {busy ? <Spinner /> : <><Power size={24} /> {online ? t('goOffline') : t('goOnline')}</>}
           </button>
         </div>
@@ -217,7 +217,7 @@ function RequestCard({ req, more, sent, busy, onOffer, onSkip }: { req: RequestD
           </div>
           <div className="row">
             <button className="btn btn-lg" style={{ width: 90 }} onClick={onSkip}>{t('skip')}</button>
-            <button className="btn btn-ok btn-xl grow" disabled={busy} onClick={() => onOffer(counter ? price : undefined)}>{counter ? `Offer ${formatPKR(price)}` : t('accept')}</button>
+            <button className="btn btn-primary btn-xl grow" disabled={busy} onClick={() => onOffer(counter ? price : undefined)}>{counter ? `Offer ${formatPKR(price)}` : t('accept')}</button>
           </div>
         </>
       )}
@@ -267,7 +267,7 @@ function Trip({ order, pos, onDone, onUpdate }: { order: OrderDto; pos: { lat: n
         {order.paymentStatus === 'pending' ? (
           <>
             <div className="banner" style={{ marginBottom: 10 }}>Collect <b>{formatPKR(order.finalFare)}</b> in cash from the rider.</div>
-            <button className="btn btn-ok btn-xl btn-block" disabled={busy} onClick={() => act('cash-confirm')}>{t('collectCash')}</button>
+            <button className="btn btn-primary btn-xl btn-block" disabled={busy} onClick={() => act('cash-confirm')}>{t('collectCash')}</button>
           </>
         ) : !rated ? (
           <>

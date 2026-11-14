@@ -1,12 +1,21 @@
 // Creates clearly-fake demo accounts so you can test the ride flow without registering drivers by hand.
 // Run:  npm run seed:demo      (safe to run again; it skips accounts that already exist)
+import fs from 'node:fs';
+import path from 'node:path';
 import { config } from './config.js';
 import { db, seedIfEmpty } from './db.js';
 import { ensureDriverRow } from './drivers.js';
 import { addLedger } from './orders.js';
 
 if (config.isProd) throw new Error('Demo data is for local use only');
-seedIfEmpty();
+const seeded = seedIfEmpty();
+if (seeded.adminEmail) {
+  console.log(`\nAdmin account created.\n  Email:    ${seeded.adminEmail}\n  Password: ${seeded.adminPassword ?? '(from SEED_ADMIN_PASSWORD)'}\n`);
+  if (seeded.adminPassword) {
+    fs.mkdirSync(config.dataDir, { recursive: true });
+    fs.writeFileSync(path.join(config.dataDir, 'first-admin.txt'), `${seeded.adminEmail}\n${seeded.adminPassword}\n`, { mode: 0o600 });
+  }
+}
 
 const centre = { lat: 30.1667, lng: 72.65 };
 const drivers: [string, string, string, string, string, string, number, number][] = [

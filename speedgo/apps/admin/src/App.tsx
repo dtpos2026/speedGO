@@ -15,7 +15,7 @@ const NAV: NavItem[] = [
   { key: 'live', label: 'Live operations', perm: 'live:view', icon: <Activity size={18} /> },
   { key: 'drivers', label: 'Drivers', perm: 'drivers:view', icon: <Car size={18} /> },
   { key: 'customers', label: 'Customers', perm: 'customers:view', icon: <Users size={18} /> },
-  { key: 'rides', label: 'Rides', perm: 'rides:view', icon: <ClipboardList size={18} /> },
+  { key: 'rides', label: 'Bookings', perm: 'rides:view', icon: <ClipboardList size={18} /> },
   { key: 'pricing', label: 'Pricing & settings', perm: 'pricing:view', icon: <SlidersHorizontal size={18} /> },
   { key: 'support', label: 'Support & safety', perm: 'support:manage', icon: <ShieldAlert size={18} /> },
   { key: 'management', label: 'Management', perm: 'exec:view', icon: <BarChart3 size={18} /> },
@@ -56,9 +56,9 @@ export function App() {
   const body = (() => {
     switch (current?.key) {
       case 'live': return <Live me={me} sock={sock} />;
-      case 'drivers': return <Drivers me={me} onChange={loadBadges} />;
-      case 'customers': return <Customers me={me} />;
-      case 'rides': return <Rides me={me} />;
+      case 'drivers': return <Drivers me={me} sock={sock} onChange={loadBadges} />;
+      case 'customers': return <Customers me={me} sock={sock} />;
+      case 'rides': return <Rides me={me} sock={sock} />;
       case 'pricing': return <Pricing me={me} />;
       case 'support': return <Support />;
       case 'management': return <Management />;

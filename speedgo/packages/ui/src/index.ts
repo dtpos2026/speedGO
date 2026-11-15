@@ -4,3 +4,4 @@ export * from './i18n';
 export * from './MapView';
 export * from './components';
 export * from './AuthFlow';
+export * from './Profile';

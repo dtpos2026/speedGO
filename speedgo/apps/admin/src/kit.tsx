@@ -1,6 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import type { Socket } from 'socket.io-client';
 import { X } from 'lucide-react';
-import { Spinner } from '@speedgo/ui';
+import { Spinner, useSocketEvent } from '@speedgo/ui';
 import { api } from './api';
 
 export function Drawer({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
@@ -74,3 +75,16 @@ export function statusChip(s: string) {
   const tone = ['completed', 'approved', 'active', 'paid'].includes(s) ? 'chip-ok' : ['cancelled', 'rejected', 'no_driver', 'blocked', 'open'].includes(s) ? 'chip-danger' : ['pending', 'incomplete', 'requested'].includes(s) ? 'chip-warn' : 'chip-brand';
   return <span className={`chip ${tone}`}>{s.replace('_', ' ')}</span>;
 }
+
+/** Re-run `load` shortly after any of these live events arrive (bursts are merged into one refresh). */
+export function useLiveRefresh(sock: Socket | null, events: string[], load: () => void) {
+  const timer = useRef<number | null>(null);
+  const soon = useCallback(() => { if (timer.current) return; timer.current = window.setTimeout(() => { timer.current = null; load(); }, 600); }, [load]);
+  useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
+  const [a, b, c] = events;
+  useSocketEvent(sock, a ?? 'live:order', soon);
+  useSocketEvent(sock, b ?? 'live:order', soon);
+  useSocketEvent(sock, c ?? 'live:order', soon);
+}
+
+export const mediaUrl = (file: string | null | undefined) => (file ? `/api/media/avatar/${file}` : null);

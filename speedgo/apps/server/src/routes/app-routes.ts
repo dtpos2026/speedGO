@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { Router, type NextFunction, type Request, type RequestHandler, type Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import multer from 'multer';
@@ -15,8 +16,9 @@ import {
   raiseSos, rateDriver, rateRider,
 } from '../orders.js';
 import { estimateAll } from '../pricing.js';
+import { AVATAR_FILE, removeAvatar, saveAvatar, userDto } from '../profile.js';
 import { getSettings } from '../settings.js';
-import type { EstimateResponse, UserDto } from '@speedgo/shared';
+import { GOODS_VEHICLES, SERVICE_TYPES, type EstimateResponse } from '@speedgo/shared';
 
 /** Wrap async handlers so thrown errors reach the error middleware. */
 export const h =
@@ -25,6 +27,7 @@ export const h =
     Promise.resolve(fn(req, res)).catch(next);
   };
 
+const avatarUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 3 * 1024 * 1024, files: 1 } });
 const latlng = z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) });
 const place = latlng.extend({ addr: z.string().trim().min(1).max(300) });
 const id = (v: unknown) => {
@@ -32,13 +35,6 @@ const id = (v: unknown) => {
   if (!Number.isInteger(n) || n <= 0) throw badRequest('Invalid id');
   return n;
 };
-
-function userDto(userId: number): UserDto {
-  const u = db.prepare('SELECT id,role,phone,name,wallet,rating_sum,rating_count FROM users WHERE id=?').get(userId) as {
-    id: number; role: 'rider' | 'driver'; phone: string; name: string | null; wallet: number; rating_sum: number; rating_count: number;
-  };
-  return { id: u.id, role: u.role, phone: u.phone, name: u.name, wallet: u.wallet, rating: u.rating_count ? Math.round((u.rating_sum / u.rating_count) * 10) / 10 : null };
-}
 
 // =====================================================================================
 // Public + auth
@@ -80,6 +76,16 @@ publicRouter.post('/auth/otp/verify', otpLimiter, h((req, res) => {
   res.json({ token: signUserToken({ id: u.id, role: b.role }), user: userDto(u.id), isNew });
 }));
 
+// Profile photos have random names, so the file name is the access token.
+publicRouter.get('/media/avatar/:file', (req, res) => {
+  const f = String(req.params.file);
+  if (!AVATAR_FILE.test(f)) return res.status(404).end();
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.sendFile(path.join(config.avatarsDir, f), (err) => { if (err && !res.headersSent) res.status(404).end(); });
+});
+
 publicRouter.get('/geo/search', h(async (req, res) => {
   const q = z.string().trim().min(2).max(120).parse(req.query.q);
   const city = db.prepare('SELECT lat,lng FROM cities WHERE active=1 LIMIT 1').get() as { lat: number; lng: number };
@@ -110,18 +116,39 @@ riderRouter.put('/me', h((req, res) => {
   res.json({ user: userDto(req.user!.id) });
 }));
 
+riderRouter.post('/me/avatar', avatarUpload.single('file'), h((req, res) => {
+  if (!req.file) throw badRequest('No photo received');
+  saveAvatar(req.user!.id, req.file.buffer);
+  res.json({ user: userDto(req.user!.id) });
+}));
+riderRouter.post('/me/avatar/remove', h((req, res) => { removeAvatar(req.user!.id); res.json({ user: userDto(req.user!.id) }); }));
+
 riderRouter.post('/estimate', h(async (req, res) => {
-  const b = z.object({ pickup: latlng, drop: latlng }).parse(req.body);
+  const b = z.object({ pickup: latlng, drop: latlng, service: z.enum(SERVICE_TYPES as [string, ...string[]]).default('ride') }).parse(req.body);
   const city = cityForPoint(b.pickup);
   if (!city) throw badRequest('SpeedGo is not available at this pickup location yet', 'OUTSIDE_SERVICE_AREA');
   const r = await route(b.pickup, b.drop);
-  const out: EstimateResponse = { distanceM: r.distanceM, durationS: r.durationS, route: r.points, routeSource: r.source, estimates: estimateAll(city.id, r.distanceM, r.durationS) };
+  const out: EstimateResponse = { distanceM: r.distanceM, durationS: r.durationS, route: r.points, routeSource: r.source, estimates: estimateAll(city.id, r.distanceM, r.durationS).filter((e) => b.service === 'ride' || GOODS_VEHICLES.includes(e.vehicleType)) };
   res.json(out);
 }));
 
 riderRouter.post('/orders', h(async (req, res) => {
-  const b = z.object({ vehicleType: z.enum(VEHICLE_TYPES), pickup: place, drop: place, offeredFare: z.number().int().positive() }).parse(req.body);
-  res.status(201).json({ order: await createOrder(req.user!.id, b) });
+  const b = z.object({
+    service: z.enum(SERVICE_TYPES as [string, ...string[]]).default('ride'),
+    meta: z.object({
+      item: z.string().trim().min(2).max(200),
+      notes: z.string().trim().max(300).optional(),
+      receiverName: z.string().trim().max(60).optional(),
+      receiverPhone: z.string().trim().max(20).optional(),
+    }).optional(),
+    vehicleType: z.enum(VEHICLE_TYPES), pickup: place, drop: place, offeredFare: z.number().int().positive(),
+  }).parse(req.body);
+  if (b.meta?.receiverPhone) {
+    const rp = normalizePhone(b.meta.receiverPhone);
+    if (!rp) throw badRequest('Enter a valid receiver mobile number, e.g. 0300 1234567', 'BAD_PHONE');
+    b.meta.receiverPhone = rp;
+  }
+  res.status(201).json({ order: await createOrder(req.user!.id, b as Parameters<typeof createOrder>[1]) });
 }));
 riderRouter.get('/orders', h((req, res) => res.json({ orders: ordersForUser(req.user!.id, 'rider', 50) })));
 riderRouter.get('/orders/active', h((req, res) => {
@@ -164,6 +191,18 @@ driverRouter.get('/me', h((req, res) => {
   const a = activeOrderForDriver(req.user!.id);
   res.json({ ...driverProfile(req.user!.id), activeOrder: a ? orderDto(a, 'driver') : null, minWallet: getSettings().min_wallet });
 }));
+
+driverRouter.put('/me', h((req, res) => {
+  const b = z.object({ name: z.string().trim().min(2).max(60) }).parse(req.body);
+  db.prepare('UPDATE users SET name=? WHERE id=?').run(b.name, req.user!.id);
+  res.json(driverProfile(req.user!.id));
+}));
+driverRouter.post('/me/avatar', avatarUpload.single('file'), h((req, res) => {
+  if (!req.file) throw badRequest('No photo received');
+  saveAvatar(req.user!.id, req.file.buffer);
+  res.json(driverProfile(req.user!.id));
+}));
+driverRouter.post('/me/avatar/remove', h((req, res) => { removeAvatar(req.user!.id); res.json(driverProfile(req.user!.id)); }));
 
 driverRouter.put('/profile', h((req, res) => {
   const b = z.object({

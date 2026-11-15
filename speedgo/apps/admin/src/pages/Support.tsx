@@ -20,9 +20,9 @@ export function Support() {
   });
   return (
     <>
-      <div><h1 className="title">Support &amp; safety</h1><div className="muted small">SOS alerts from riders and drivers. Call both people first, then resolve.</div></div>
+      <div><h1 className="title">Support &amp; safety</h1><div className="muted small">SOS alerts from customers and drivers. Call both people first, then resolve.</div></div>
       <div className="table-wrap">
-        {rows === null ? <TableSkeleton rows={3} /> : rows.length === 0 ? <Empty title="No SOS alerts" sub="If a rider or driver presses SOS during a ride it appears here instantly." /> : (
+        {rows === null ? <TableSkeleton rows={3} /> : rows.length === 0 ? <Empty title="No SOS alerts" sub="If a customer or driver presses SOS during a ride it appears here instantly." /> : (
           <table className="table"><thead><tr><th>When</th><th>Ride</th><th>Raised by</th><th>Location</th><th>Status</th><th /></tr></thead>
             <tbody>{rows.map((s) => (
               <tr key={s.id} style={s.status === 'open' ? { background: 'var(--danger-soft)' } : undefined}>

@@ -7,6 +7,7 @@ import { toAdmins, toUser } from './bus.js';
 import { badRequest, conflict, forbidden, notFound } from './errors.js';
 import { activeOrderForDriver, driverRow } from './orders.js';
 import { getSettings } from './settings.js';
+import { sniffImage, userDto } from './profile.js';
 import {
   DOC_TYPES,
   REQUIRED_DOCS,
@@ -37,13 +38,10 @@ export function ensureDriverRow(userId: number) {
 
 export function driverProfile(userId: number): DriverProfileDto {
   ensureDriverRow(userId);
-  const u = db.prepare('SELECT id,phone,name,wallet,rating_sum,rating_count FROM users WHERE id=?').get(userId) as {
-    id: number; phone: string; name: string | null; wallet: number; rating_sum: number; rating_count: number;
-  };
   const d = db.prepare('SELECT * FROM drivers WHERE user_id=?').get(userId) as DriverFull;
   const docs = db.prepare('SELECT type,status,reason FROM driver_documents WHERE driver_id=?').all(userId) as { type: DocType; status: DocStatus; reason: string | null }[];
   return {
-    user: { id: u.id, role: 'driver', phone: u.phone, name: u.name, wallet: u.wallet, rating: u.rating_count ? Math.round((u.rating_sum / u.rating_count) * 10) / 10 : null },
+    user: userDto(userId),
     profile: { cnic: d.cnic, licenceNo: d.licence_no, vehicleType: d.vehicle_type, plate: d.plate, model: d.model, color: d.color, year: d.year },
     approvalStatus: d.approval_status,
     reviewNote: d.review_note,
@@ -67,14 +65,6 @@ export function updateProfile(
 }
 
 const ALLOWED_MIME: Record<string, string> = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp' };
-
-/** Sniff the real file type from its first bytes (do not trust the client's mime header). */
-export function sniffImage(buf: Buffer): string | null {
-  if (buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
-  if (buf.length > 8 && buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
-  if (buf.length > 12 && buf.subarray(0, 4).toString() === 'RIFF' && buf.subarray(8, 12).toString() === 'WEBP') return 'image/webp';
-  return null;
-}
 
 export function saveDocument(userId: number, type: string, buf: Buffer) {
   if (!(DOC_TYPES as readonly string[]).includes(type)) throw badRequest('Unknown document type');

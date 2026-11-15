@@ -132,13 +132,13 @@ const log = (m) => console.log('•', m);
     await A.page.getByRole('radio', { name: 'Light' }).first().click();
     await A.page.waitForTimeout(400);
     await shot(A.page, 'admin-2-live-light');
-    for (const [label, name] of [['Drivers', 'admin-3-drivers'], ['Rides', 'admin-4-rides'], ['Pricing & settings', 'admin-5-pricing'], ['Management', 'admin-6-management'], ['Roles & staff', 'admin-7-roles'], ['Audit log', 'admin-8-audit']]) {
+    for (const [label, name] of [['Drivers', 'admin-3-drivers'], ['Bookings', 'admin-4-rides'], ['Pricing & settings', 'admin-5-pricing'], ['Management', 'admin-6-management'], ['Roles & staff', 'admin-7-roles'], ['Audit log', 'admin-8-audit']]) {
       await A.page.getByRole('button', { name: new RegExp('^' + label.replace(/[&]/g, '\\&')) }).first().click();
       await A.page.waitForTimeout(900);
       await shot(A.page, name);
     }
     // completed ride must appear in the admin rides list
-    await A.page.getByRole('button', { name: /^Rides/ }).first().click();
+    await A.page.getByRole('button', { name: /^Bookings/ }).first().click();
     await A.page.getByRole('tab', { name: 'Completed' }).click();
     await A.page.getByRole('row').nth(1).waitFor({ timeout: 5000 });
     log('admin sees the completed ride');

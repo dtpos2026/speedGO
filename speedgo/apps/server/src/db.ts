@@ -94,6 +94,17 @@ CREATE TABLE IF NOT EXISTS audit_log(
 CREATE INDEX IF NOT EXISTS idx_audit_at ON audit_log(at);
 `);
 
+/** Adds a column to an existing database (older local test databases keep working). */
+function addColumn(table: string, column: string, def: string) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!cols.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${def}`);
+}
+addColumn('users', 'avatar', 'TEXT');
+addColumn('orders', 'booking_no', 'TEXT');
+// Bookings made before booking numbers existed get one too.
+db.exec(`UPDATE orders SET booking_no='SG-' || CASE service WHEN 'pickup' THEN 'PD' WHEN 'delivery' THEN 'DL' ELSE 'RD' END || '-' || substr('000000' || id, -6, 6) WHERE booking_no IS NULL`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_orders_booking ON orders(booking_no)');
+
 export function audit(actorType: 'admin' | 'system' | 'security', actorId: number | null, actorName: string | null, action: string, target?: string, detail?: unknown) {
   db.prepare('INSERT INTO audit_log(actor_type,actor_id,actor_name,action,target,detail,at) VALUES (?,?,?,?,?,?,?)').run(
     actorType, actorId, actorName, action, target ?? null, detail === undefined ? null : JSON.stringify(detail), Date.now());

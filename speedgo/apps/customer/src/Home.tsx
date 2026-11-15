@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Car, ChevronRight, Clock, Crosshair, History, LogOut, MapPin, Menu, MessageCircle, Minus, Navigation, Phone, Plus, Search, Settings, Share2, ShieldAlert, X } from 'lucide-react';
+import { Car, ChevronRight, Clock, Crosshair, History, LogOut, MapPin, Menu, MessageCircle, Minus, Navigation, Package, Phone, Plus, Search, Settings, Share2, ShieldAlert, ShoppingBag, X } from 'lucide-react';
 import {
-  MapView, Spinner, Stars, ThemeSwitch, useAction, useCountdown, useGeolocation, useI18n, useSocket, useSocketEvent, useToast, type MapLine, type MapMarker,
+  Avatar, MapView, ProfileCard, Spinner, Stars, ThemeSwitch, useAction, useCountdown, useGeolocation, useI18n, useSocket, useSocketEvent, useToast, type MapLine, type MapMarker,
 } from '@speedgo/ui';
 import {
-  fmtDistance, fmtDuration, formatPhone, formatPKR, haversineM, VEHICLE_LABEL, type EstimateResponse, type OfferDto, type OrderDto, type Place, type UserDto, type VehicleType,
+  fmtDistance, fmtDuration, formatPhone, formatPKR, haversineM, SERVICE_LABEL, SERVICE_TYPES, VEHICLE_LABEL, type EstimateResponse, type OfferDto, type OrderDto, type Place, type ServiceType, type UserDto, type VehicleType,
 } from '@speedgo/shared';
 import { api } from './App';
 import { dict } from './strings';
 
 interface Cfg { city: { lat: number; lng: number; name: string } }
-type Step = 'idle' | 'search' | 'choose';
+type Step = 'idle' | 'search' | 'goods' | 'choose';
+interface Goods { item: string; notes: string; receiverName: string; receiverPhone: string }
+const NO_GOODS: Goods = { item: '', notes: '', receiverName: '', receiverPhone: '' };
 
 const RATING_TAGS = ['Clean car', 'Safe driving', 'Good route', 'Polite'];
 
@@ -23,6 +25,9 @@ export function Home({ cfg, user, token, onUser, onLogout }: { cfg: Cfg; user: U
 
   const [order, setOrder] = useState<OrderDto | null>(null);
   const [step, setStep] = useState<Step>('idle');
+  const [service, setService] = useState<ServiceType>('ride');
+  const [goods, setGoods] = useState<Goods>(NO_GOODS);
+  const [searchFor, setSearchFor] = useState<'pickup' | 'drop'>('drop');
   const [pickup, setPickup] = useState<Place | null>(null);
   const [drop, setDrop] = useState<Place | null>(null);
   const [mapPick, setMapPick] = useState<'pickup' | 'drop' | null>(null);
@@ -83,7 +88,8 @@ export function Home({ cfg, user, token, onUser, onLogout }: { cfg: Cfg; user: U
     if (order || !mapPick) return;
     const addr = await reverse(p);
     if (mapPick === 'pickup') setPickup({ ...p, addr });
-    else { setDrop({ ...p, addr }); setStep('choose'); }
+    else { setDrop({ ...p, addr }); if (service === 'ride') setStep('choose'); }
+    if (service !== 'ride') setStep('goods');
     setMapPick(null);
   };
 
@@ -91,13 +97,14 @@ export function Home({ cfg, user, token, onUser, onLogout }: { cfg: Cfg; user: U
   useEffect(() => {
     if (step !== 'choose' || !pickup || !drop) return;
     setEstimate(null);
-    api.post<EstimateResponse>('/api/rider/estimate', { pickup, drop })
+    api.post<EstimateResponse>('/api/rider/estimate', { pickup, drop, service })
       .then((e) => {
         setEstimate(e);
-        const v = e.estimates.find((x) => x.vehicleType === 'mini') ? 'mini' : e.estimates[0]?.vehicleType;
+        const pref = service === 'ride' ? 'mini' : 'bike';
+        const v = e.estimates.find((x) => x.vehicleType === pref) ? pref : e.estimates[0]?.vehicleType;
         if (v) { setVehicle(v); setOffer(e.estimates.find((x) => x.vehicleType === v)!.fare); }
       })
-      .catch((e) => { toast(e.message, 'error'); setStep('idle'); setDrop(null); });
+      .catch((e) => { toast(e.message, 'error'); setStep(service === 'ride' ? 'idle' : 'goods'); if (service === 'ride') setDrop(null); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, pickup?.lat, pickup?.lng, drop?.lat, drop?.lng]);
 
@@ -107,11 +114,14 @@ export function Home({ cfg, user, token, onUser, onLogout }: { cfg: Cfg; user: U
 
   const requestRide = () => run(async () => {
     if (!pickup || !drop) return;
-    const r = await api.post<{ order: OrderDto }>('/api/rider/orders', { vehicleType: vehicle, pickup, drop, offeredFare: offer });
+    const r = await api.post<{ order: OrderDto }>('/api/rider/orders', {
+      service, vehicleType: vehicle, pickup, drop, offeredFare: offer,
+      ...(service !== 'ride' ? { meta: { item: goods.item.trim(), notes: goods.notes.trim() || undefined, receiverName: goods.receiverName.trim() || undefined, receiverPhone: goods.receiverPhone.trim() || undefined } } : {}),
+    });
     setOrder(r.order); setDriverPos(null); setRated(false); setRating(0); setTags([]);
   });
 
-  const reset = () => { setOrder(null); setStep('idle'); setDrop(null); setEstimate(null); setDriverPos(null); setRating(0); setTags([]); setRated(false); };
+  const reset = () => { setOrder(null); setStep('idle'); setDrop(null); setGoods(NO_GOODS); setEstimate(null); setDriverPos(null); setRating(0); setTags([]); setRated(false); };
   const cancel = () => run(async () => {
     if (!order) return;
     if (!confirm(order.status === 'requested' ? 'Cancel this request?' : 'Cancel this ride? A fee may apply if the driver already arrived.')) return;
@@ -158,7 +168,7 @@ export function Home({ cfg, user, token, onUser, onLogout }: { cfg: Cfg; user: U
       <div className="float row between" style={{ top: 16, left: 16, right: 16 }}>
         <button className="btn icon-btn glass" onClick={() => setMenu(true)} aria-label="Menu"><Menu size={22} /></button>
         {mapPick ? (
-          <div className="glass chip" style={{ padding: '10px 16px' }}><Crosshair size={14} /> {mapPick === 'pickup' ? t('tapMap') : 'Tap the map to set your destination'}</div>
+          <div className="glass chip" style={{ padding: '10px 16px' }}><Crosshair size={14} /> {mapPick === 'pickup' ? (service === 'ride' ? t('tapMap') : `Tap the map: ${SERVICE_LABEL[service].from}`) : `Tap the map: ${SERVICE_LABEL[service].to}`}</div>
         ) : (
           !connected && <div className="chip chip-warn"><Spinner size={14} /> Reconnecting…</div>
         )}
@@ -168,23 +178,30 @@ export function Home({ cfg, user, token, onUser, onLogout }: { cfg: Cfg; user: U
       {/* bottom content */}
       {!mapPick && (
         <>
-          {!order && step === 'idle' && <IdleSheet pickup={pickup} onSearch={() => setStep('search')} onPickOnMap={() => setMapPick('pickup')} />}
+          {!order && step === 'idle' && <IdleSheet pickup={pickup} service={service} onService={(sv) => { setService(sv); setDrop(null); setEstimate(null); }}
+            onSearch={() => { setSearchFor('drop'); setStep('search'); }} onPickOnMap={() => setMapPick('pickup')}
+            onStartGoods={() => { if (service === 'pickup' && pos && !drop) reverse(pos).then((addr) => setDrop({ ...pos, addr })); setStep('goods'); }} />}
           {!order && step === 'search' && (
             <SearchSheet
               near={pickup ?? { lat: cfg.city.lat, lng: cfg.city.lng }}
-              onBack={() => setStep('idle')}
-              onMapPick={() => { setMapPick('drop'); }}
-              onPick={(p) => { setDrop(p); setStep('choose'); }}
+              onBack={() => setStep(service === 'ride' ? 'idle' : 'goods')}
+              onMapPick={() => { setMapPick(searchFor); }}
+              onPick={(p) => { if (searchFor === 'pickup') setPickup(p); else setDrop(p); setStep(service === 'ride' ? 'choose' : 'goods'); }}
             />
+          )}
+          {!order && step === 'goods' && (
+            <GoodsSheet service={service} pickup={pickup} drop={drop} goods={goods} setGoods={setGoods}
+              onChange={(which) => { setSearchFor(which); setStep('search'); }} onBack={() => { setStep('idle'); setDrop(null); }}
+              onNext={() => setStep('choose')} />
           )}
           {!order && step === 'choose' && (
             <div className="sheet">
               <div className="sheet-grab" />
               <div className="row between" style={{ marginBottom: 8 }}>
-                <div className="heading">{t('chooseRide')}</div>
+                <div className="heading">{service === 'ride' ? t('chooseRide') : 'Choose a vehicle'}</div>
                 <div className="row">
                   {estimate && <span className="muted small">{fmtDistance(estimate.distanceM)} · {fmtDuration(estimate.durationS)}</span>}
-                  <button className="btn btn-sm" onClick={() => { setStep('idle'); setDrop(null); setEstimate(null); }}>Change</button>
+                  <button className="btn btn-sm" onClick={() => { setEstimate(null); if (service === 'ride') { setStep('idle'); setDrop(null); } else setStep('goods'); }}>Change</button>
                 </div>
               </div>
               {!estimate ? (
@@ -232,11 +249,19 @@ export function Home({ cfg, user, token, onUser, onLogout }: { cfg: Cfg; user: U
 
 // ---------------- Sheets ----------------
 
-function IdleSheet({ pickup, onSearch, onPickOnMap }: { pickup: Place | null; onSearch: () => void; onPickOnMap: () => void }) {
+function IdleSheet({ pickup, service, onService, onSearch, onPickOnMap, onStartGoods }: { pickup: Place | null; service: ServiceType; onService: (s: ServiceType) => void; onSearch: () => void; onPickOnMap: () => void; onStartGoods: () => void }) {
   const { t } = useI18n(dict);
   return (
     <div className="sheet">
       <div className="sheet-grab" />
+      <ServiceTabs service={service} onService={onService} />
+      {service !== 'ride' ? (
+        <button className="list-item" style={{ minHeight: 58 }} onClick={onStartGoods}>
+          {service === 'pickup' ? <ShoppingBag size={22} color="var(--brand)" /> : <Package size={22} color="var(--brand)" />}
+          <span className="grow"><b style={{ fontSize: 17 }}>{service === 'pickup' ? 'What should we bring you?' : 'What are you sending?'}</b><br /><span className="small muted">{SERVICE_LABEL[service].hint}</span></span>
+          <ChevronRight size={18} />
+        </button>
+      ) : <>
       <button className="list-item" style={{ minHeight: 58 }} onClick={onSearch}>
         <Search size={22} color="var(--brand)" />
         <span className="grow heading" style={{ fontSize: 19 }}>{t('whereTo')}</span>
@@ -247,6 +272,56 @@ function IdleSheet({ pickup, onSearch, onPickOnMap }: { pickup: Place | null; on
         <div className="grow small"><span className="muted">{t('pickup')}</span><br /><b>{pickup ? pickup.addr : <span className="muted">Finding your location…</span>}</b></div>
         <button className="btn btn-sm" onClick={onPickOnMap}><Crosshair size={14} /> Set on map</button>
       </div>
+      </>}
+    </div>
+  );
+}
+
+function ServiceTabs({ service, onService }: { service: ServiceType; onService: (s: ServiceType) => void }) {
+  const icons = { ride: <Car size={18} />, pickup: <ShoppingBag size={18} />, delivery: <Package size={18} /> };
+  return (
+    <div className="row" style={{ gap: 8, marginBottom: 12 }} role="tablist" aria-label="Service">
+      {SERVICE_TYPES.map((sv) => (
+        <button key={sv} role="tab" aria-selected={service === sv} className={`btn grow ${service === sv ? 'btn-primary' : ''}`} style={{ flexDirection: 'column', gap: 2, minHeight: 62, fontSize: 12.5, padding: '6px 4px' }} onClick={() => onService(sv)}>
+          {icons[sv]}{SERVICE_LABEL[sv].en}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function GoodsSheet({ service, pickup, drop, goods, setGoods, onChange, onBack, onNext }: {
+  service: ServiceType; pickup: Place | null; drop: Place | null; goods: Goods; setGoods: (g: Goods) => void; onChange: (w: 'pickup' | 'drop') => void; onBack: () => void; onNext: () => void;
+}) {
+  const L = SERVICE_LABEL[service];
+  const ok = !!pickup && !!drop && goods.item.trim().length >= 2 && (service !== 'delivery' || goods.receiverPhone.trim().length >= 10);
+  const set = (k: keyof Goods) => (e: { target: { value: string } }) => setGoods({ ...goods, [k]: e.target.value });
+  return (
+    <div className="sheet" style={{ maxHeight: '92%', overflowY: 'auto' }}>
+      <div className="sheet-grab" />
+      <div className="row between" style={{ marginBottom: 10 }}>
+        <div className="heading">{L.en}</div>
+        <button className="btn icon-btn" onClick={onBack} aria-label="Back"><X size={20} /></button>
+      </div>
+      <div className="card col" style={{ gap: 10 }}>
+        <div className="row"><MapPin size={18} color="var(--ok)" /><div className="grow small"><span className="muted">{L.from}</span><br /><b>{pickup ? pickup.addr : <span className="muted">Not set</span>}</b></div><button className="btn btn-sm" onClick={() => onChange('pickup')}>{pickup ? 'Change' : 'Set'}</button></div>
+        <div className="divider" />
+        <div className="row"><Navigation size={18} color="var(--brand)" /><div className="grow small"><span className="muted">{L.to}</span><br /><b>{drop ? drop.addr : <span className="muted">Not set</span>}</b></div><button className="btn btn-sm" onClick={() => onChange('drop')}>{drop ? 'Change' : 'Set'}</button></div>
+      </div>
+      <div className="col" style={{ gap: 10, marginTop: 12 }}>
+        <label className="field">{service === 'pickup' ? 'What should the driver collect?' : 'What are you sending?'}
+          <input className="input" maxLength={200} placeholder={service === 'pickup' ? 'e.g. 2 biryani from Rana Hotel' : 'e.g. Documents envelope'} value={goods.item} onChange={set('item')} /></label>
+        <label className="field">Notes for the driver (optional)
+          <input className="input" maxLength={300} placeholder="Shop name, floor, how to find the place…" value={goods.notes} onChange={set('notes')} /></label>
+        {service === 'delivery' && (
+          <div className="row" style={{ alignItems: 'flex-start' }}>
+            <label className="field grow">Receiver name<input className="input" maxLength={60} value={goods.receiverName} onChange={set('receiverName')} /></label>
+            <label className="field grow">Receiver mobile<input className="input" inputMode="tel" dir="ltr" placeholder="0300 1234567" value={goods.receiverPhone} onChange={set('receiverPhone')} /></label>
+          </div>
+        )}
+        <div className="small muted">Payment: <b style={{ color: 'var(--text)' }}>Cash to the driver</b>. {service === 'pickup' ? 'You pay the shop price to the driver only if you agreed it with them; the fare here is for the trip.' : 'The fare here is for the delivery trip.'}</div>
+      </div>
+      <button className="btn btn-primary btn-lg btn-block" style={{ marginTop: 12 }} disabled={!ok} onClick={onNext}>Choose vehicle and fare</button>
     </div>
   );
 }
@@ -337,7 +412,8 @@ function OrderSheet(props: {
         <div className="sheet-grab" />
         <div className="row between">
           <div><div className="heading">{offers.length ? `${offers.length} driver${offers.length > 1 ? 's' : ''} replied` : t('searching')}</div>
-            <div className="small muted">{VEHICLE_LABEL[order.vehicleType].en} · your offer {formatPKR(order.offeredFare)}</div></div>
+            <div className="small muted">{order.bookingNo} · {VEHICLE_LABEL[order.vehicleType].en} · your offer {formatPKR(order.offeredFare)}</div>
+            {order.meta?.item && <div className="small" style={{ marginTop: 2 }}><b>{SERVICE_LABEL[order.service].en}:</b> {order.meta.item}</div>}</div>
           <span className="chip chip-brand" dir="ltr">{Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}</span>
         </div>
         <div className="progress" style={{ margin: '10px 0' }}><i style={{ animation: `sg-bar ${ttl}s linear forwards`, animationDelay: `-${Math.max(0, ttl - left)}s` }} /></div>
@@ -346,7 +422,7 @@ function OrderSheet(props: {
           {offers.map((o) => (
             <div key={o.id} className="card" style={{ borderColor: o.matchesOffer ? 'var(--brand)' : undefined, borderWidth: o.matchesOffer ? 2 : 1 }}>
               <div className="row">
-                <span className="avatar">{(o.driver.name ?? '?').slice(0, 2).toUpperCase()}</span>
+                <Avatar name={o.driver.name} url={o.driver.avatarUrl} />
                 <div className="grow"><b>{o.driver.name}</b><div className="small muted">★ {o.driver.rating ?? 'New'} · {o.driver.vehicle.color} {o.driver.vehicle.model}{o.etaS != null && <> · {Math.max(1, Math.round(o.etaS / 60))} min</>}</div></div>
                 <div style={{ textAlign: 'end' }}><div className="bold" style={{ fontSize: 18 }}>{formatPKR(o.price)}</div><div className="small" style={{ color: o.matchesOffer ? 'var(--ok)' : 'var(--warn)', fontWeight: 700 }}>{o.matchesOffer ? 'Your price' : `+${o.price - order.offeredFare}`}</div></div>
               </div>
@@ -379,7 +455,8 @@ function OrderSheet(props: {
         <div className="sheet-grab" />
         <div className="center col" style={{ alignItems: 'center' }}>
           <div className="pop" style={{ width: 72, height: 72, borderRadius: '50%', background: 'var(--ok-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 34 }}>✓</div>
-          <div className="title">{t('arrivedDest')}</div>
+          <div className="title">{order.service === 'ride' ? t('arrivedDest') : 'Delivered'}</div>
+          <div className="small muted">{order.bookingNo}</div>
         </div>
         <div className="card col" style={{ margin: '14px 0', gap: 6 }}>
           <div className="row between"><span className="muted">Agreed fare</span><b>{formatPKR(order.agreedFare)}</b></div>
@@ -417,7 +494,7 @@ function OrderSheet(props: {
       </div>
       {d && (
         <div className="row">
-          <span className="avatar" style={{ width: 56, height: 56 }}>{(d.name ?? '?').slice(0, 2).toUpperCase()}</span>
+          <Avatar name={d.name} url={d.avatarUrl} size={56} />
           <div className="grow"><div className="bold" style={{ fontSize: 17 }}>{d.name}</div><div className="small muted">★ {d.rating ?? 'New'} · {d.vehicle.color} {d.vehicle.model}</div></div>
           <div className="card-flat center" style={{ padding: '6px 10px' }}><div className="small muted" style={{ fontSize: 10 }}>PLATE</div><b dir="ltr">{d.vehicle.plate}</b></div>
         </div>
@@ -433,6 +510,14 @@ function OrderSheet(props: {
         {d?.phone && <a className="btn grow" href={`sms:${d.phone}`}><MessageCircle size={18} color="var(--brand)" /> Message</a>}
         <button className="btn grow" onClick={share}><Share2 size={18} color="var(--brand)" /> {t('share')}</button>
       </div>
+      {order.service !== 'ride' && order.meta && (
+        <div className="card-flat col" style={{ gap: 4, fontSize: 13, marginBottom: 8 }}>
+          <div className="row between"><b>{SERVICE_LABEL[order.service].en}</b><span className="chip chip-brand">{order.bookingNo}</span></div>
+          <div>{order.meta.item}</div>
+          {order.meta.receiverName || order.meta.receiverPhone ? <div className="muted">Receiver: {order.meta.receiverName} {order.meta.receiverPhone && <span dir="ltr">{formatPhone(order.meta.receiverPhone)}</span>}</div> : null}
+        </div>
+      )}
+      {order.service === 'ride' && <div className="small muted" style={{ marginBottom: 6 }}>Booking {order.bookingNo}</div>}
       <div className="card col" style={{ gap: 8, fontSize: 13 }}>
         <div className="row"><MapPin size={16} color="var(--ok)" /><span className="grow">{order.pickup.addr}</span></div>
         <div className="row"><Navigation size={16} /><span className="grow">{order.drop.addr}</span><b>{formatPKR(order.agreedFare)}</b></div>
@@ -446,8 +531,6 @@ function MenuSheet({ user, onUser, onClose, onLogout }: { user: UserDto; onUser:
   const { t, lang, setLang } = useI18n(dict);
   const [tab, setTab] = useState<'menu' | 'history'>('menu');
   const [orders, setOrders] = useState<OrderDto[] | null>(null);
-  const [name, setName] = useState(user.name ?? '');
-  const { busy, run } = useAction();
   useEffect(() => { if (tab === 'history') api.get<{ orders: OrderDto[] }>('/api/rider/orders').then((r) => setOrders(r.orders)).catch(() => setOrders([])); }, [tab]);
   return (
     <>
@@ -455,7 +538,7 @@ function MenuSheet({ user, onUser, onClose, onLogout }: { user: UserDto; onUser:
       <div className="sheet" style={{ zIndex: 900, height: '82%' }}>
         <div className="sheet-grab" />
         <div className="row between" style={{ marginBottom: 12 }}>
-          <div className="row"><span className="avatar">{(user.name ?? '?').slice(0, 2).toUpperCase()}</span><div><b>{user.name}</b><div className="small muted" dir="ltr">{formatPhone(user.phone)}</div></div></div>
+          <div className="row"><Avatar name={user.name} url={user.avatarUrl} /><div><b>{user.name}</b><div className="small muted" dir="ltr">{formatPhone(user.phone)}</div></div></div>
           <button className="btn icon-btn" onClick={onClose} aria-label="Close"><X size={20} /></button>
         </div>
         <div className="row" style={{ marginBottom: 12 }}>
@@ -464,9 +547,7 @@ function MenuSheet({ user, onUser, onClose, onLogout }: { user: UserDto; onUser:
         </div>
         {tab === 'menu' && (
           <div className="col" style={{ gap: 14 }}>
-            <label className="field">Name
-              <div className="row"><input className="input" value={name} onChange={(e) => setName(e.target.value)} /><button className="btn btn-primary" disabled={busy || name.trim().length < 2 || name === user.name} onClick={() => run(async () => { const r = await api.put<{ user: UserDto }>('/api/rider/me', { name }); onUser(r.user); })}>Save</button></div>
-            </label>
+            <ProfileCard api={api} base="/api/rider" user={user} onUser={onUser} tripsLabel="Bookings" />
             <div className="row between"><b>{t('language')}</b>
               <div className="row"><button className={`btn btn-sm ${lang === 'en' ? 'btn-tonal' : ''}`} onClick={() => setLang('en')}>English</button><button className={`btn btn-sm ${lang === 'ur' ? 'btn-tonal' : ''}`} onClick={() => setLang('ur')}>اردو</button></div></div>
             <div className="row between"><b>{t('theme')}</b><ThemeSwitch /></div>
@@ -480,8 +561,9 @@ function MenuSheet({ user, onUser, onClose, onLogout }: { user: UserDto; onUser:
             {orders?.length === 0 && <div className="center muted" style={{ padding: 30 }}><div className="heading" style={{ color: 'var(--text)' }}>{t('noRides')}</div>{t('noRidesSub')}</div>}
             {orders?.map((o) => (
               <div key={o.id} className="card">
-                <div className="row between"><b className="small">{new Date(o.createdAt).toLocaleString('en-PK', { dateStyle: 'medium', timeStyle: 'short' })}</b>
+                <div className="row between"><b className="small">{SERVICE_LABEL[o.service].en} · {o.bookingNo}</b>
                   <span className={`chip ${o.status === 'completed' ? 'chip-ok' : o.status === 'cancelled' || o.status === 'no_driver' ? 'chip-danger' : 'chip-brand'}`}>{o.status.replace('_', ' ')}</span></div>
+                <div className="small muted">{new Date(o.createdAt).toLocaleString('en-PK', { dateStyle: 'medium', timeStyle: 'short' })}{o.meta?.item ? ` · ${o.meta.item}` : ''}</div>
                 <div className="small" style={{ marginTop: 6 }}><MapPin size={12} color="var(--ok)" /> {o.pickup.addr.split(',')[0]}<br /><Navigation size={12} /> {o.drop.addr.split(',')[0]}</div>
                 <div className="row between" style={{ marginTop: 6 }}><span className="small muted">{fmtDistance(o.distanceM)} · {VEHICLE_LABEL[o.vehicleType].en}</span><b>{formatPKR(o.finalFare ?? o.agreedFare ?? o.offeredFare)}</b></div>
               </div>

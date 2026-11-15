@@ -11,8 +11,24 @@ export const VEHICLE_LABEL: Record<VehicleType, { en: string; ur: string; seats:
   vip: { en: 'VIP', ur: 'وی آئی پی', seats: 4, hint: 'Premium sedan' },
 };
 
-// Orders are service-agnostic so food pickup and parcel delivery can reuse the same flow later.
-export type ServiceType = 'ride' | 'food' | 'parcel';
+// Orders are service-agnostic: a ride, a pick-and-drop (collect food or anything and bring it to me)
+// and a parcel delivery all use the same booking, offer and dispatch flow.
+export type ServiceType = 'ride' | 'pickup' | 'delivery';
+export const SERVICE_TYPES: ServiceType[] = ['ride', 'pickup', 'delivery'];
+export const SERVICE_LABEL: Record<ServiceType, { en: string; ur: string; short: string; hint: string; from: string; to: string }> = {
+  ride: { en: 'Ride', ur: 'سواری', short: 'RD', hint: 'Go anywhere in the city', from: 'Pickup', to: 'Destination' },
+  pickup: { en: 'Pick & Drop', ur: 'پک اینڈ ڈراپ', short: 'PD', hint: 'Food or anything collected and brought to you', from: 'Collect from', to: 'Bring to' },
+  delivery: { en: 'Delivery', ur: 'ڈیلیوری', short: 'DL', hint: 'Send a parcel to someone in the city', from: 'Pick up from', to: 'Deliver to' },
+};
+/** Vehicles that can carry goods. Cars are for passengers only in Phase 1. */
+export const GOODS_VEHICLES: VehicleType[] = ['bike', 'rickshaw', 'mini'];
+export interface OrderMeta {
+  item: string;
+  notes?: string;
+  receiverName?: string;
+  receiverPhone?: string;
+}
+export const bookingNo = (service: ServiceType, id: number) => `SG-${SERVICE_LABEL[service].short}-${String(id).padStart(6, '0')}`;
 
 export type OrderStatus = 'requested' | 'accepted' | 'arrived' | 'in_progress' | 'completed' | 'cancelled' | 'no_driver';
 export const ACTIVE_ORDER_STATUSES: OrderStatus[] = ['requested', 'accepted', 'arrived', 'in_progress'];
@@ -88,6 +104,9 @@ export function formatPKR(n: number | null | undefined): string {
 // ---------- DTOs ----------
 export interface UserDto {
   id: number;
+  avatarUrl: string | null;
+  trips: number;
+  memberSince: number | null;
   role: 'rider' | 'driver';
   phone: string;
   name: string | null;
@@ -106,6 +125,7 @@ export interface VehicleDto {
 export interface DriverSummaryDto {
   id: number;
   name: string | null;
+  avatarUrl?: string | null;
   phone?: string;
   rating: number | null;
   ratingCount: number;
@@ -129,7 +149,9 @@ export interface OfferDto {
 
 export interface OrderDto {
   id: number;
+  bookingNo: string;
   service: ServiceType;
+  meta?: OrderMeta | null;
   status: OrderStatus;
   vehicleType: VehicleType;
   pickup: Place;
@@ -157,7 +179,7 @@ export interface OrderDto {
   cancelReason: string | null;
   sos: boolean;
   driver?: DriverSummaryDto;
-  rider?: { id: number; name: string | null; phone?: string; rating: number | null };
+  rider?: { id: number; name: string | null; avatarUrl?: string | null; phone?: string; rating: number | null };
   offers?: OfferDto[];
   driverRating: number | null;
   riderRating: number | null;
@@ -166,6 +188,10 @@ export interface OrderDto {
 /** What a driver sees for an open request. Rider details stay minimal until accepted. */
 export interface RequestDto {
   id: number;
+  bookingNo: string;
+  service: ServiceType;
+  item?: string | null;
+  riderAvatarUrl?: string | null;
   vehicleType: VehicleType;
   pickup: Place;
   drop: Place;

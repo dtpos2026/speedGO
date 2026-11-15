@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BarChart3, Crosshair, Home, MapPin, MessageCircle, Navigation, Phone, Power, ShieldAlert, User, Wallet } from 'lucide-react';
-import { MapView, Spinner, Stars, ThemeSwitch, useAction, useCountdown, useGeolocation, useI18n, useSocket, useSocketEvent, useToast, type MapLine, type MapMarker } from '@speedgo/ui';
-import { fmtDistance, fmtDuration, formatPhone, formatPKR, VEHICLE_LABEL, type OrderDto, type RequestDto } from '@speedgo/shared';
+import { Avatar, MapView, ProfileCard, Spinner, Stars, ThemeSwitch, useAction, useCountdown, useGeolocation, useI18n, useSocket, useSocketEvent, useToast, type MapLine, type MapMarker } from '@speedgo/ui';
+import { fmtDistance, fmtDuration, formatPhone, formatPKR, SERVICE_LABEL, VEHICLE_LABEL, type OrderDto, type RequestDto, type UserDto } from '@speedgo/shared';
 import { api, type Me, type PublicConfig } from './App';
 import { dict } from './strings';
 
@@ -133,7 +133,7 @@ export function Drive({ me, token, cfg, refresh, onLogout }: { me: Me; token: st
       {/* top bar */}
       <div className="float row between" style={{ top: 14, left: 14, right: 14, alignItems: 'flex-start' }}>
         <button className="glass row" style={{ padding: '8px 14px 8px 8px', borderRadius: 999, border: '1px solid var(--border)', cursor: 'pointer' }} onClick={() => setTab('account')}>
-          <span className="avatar" style={{ width: 36, height: 36 }}>{(me.user.name ?? '?').slice(0, 2).toUpperCase()}</span>
+          <Avatar name={me.user.name} url={me.user.avatarUrl} size={36} />
           <b className="small">{me.user.name?.split(' ')[0]} · ★ {me.user.rating ?? 'New'}</b>
         </button>
         <div className="glass" style={{ padding: '8px 14px', borderRadius: 16, textAlign: 'end' }}><div className="small muted">Today</div><div className="bold" style={{ fontSize: 18 }}>{formatPKR(earn?.today.net ?? 0)}</div></div>
@@ -164,7 +164,7 @@ export function Drive({ me, token, cfg, refresh, onLogout }: { me: Me; token: st
       {order && <Trip order={order} pos={myPos} onDone={finishOrder} onUpdate={setOrder} />}
 
       {tab === 'earnings' && <EarningsScreen earn={earn} reload={loadEarn} />}
-      {tab === 'account' && <AccountScreen me={me} onLogout={onLogout} onClose={() => setTab('home')} />}
+      {tab === 'account' && <AccountScreen me={me} onLogout={onLogout} onClose={() => setTab('home')} onChanged={refresh} />}
 
       <div className="tabbar">
         <button className={`tab ${tab === 'home' ? 'active' : ''}`} onClick={() => setTab('home')}><Home size={24} />{t('home')}</button>
@@ -189,24 +189,25 @@ function RequestCard({ req, more, sent, busy, onOffer, onSkip }: { req: RequestD
     <div className="sheet" style={{ paddingBottom: 90, background: 'var(--surface)' }}>
       <div className="sheet-grab" />
       <div className="row between">
-        <div><div className="small bold" style={{ color: 'var(--brand)', letterSpacing: 1 }}>{t('newRequest')}{more > 0 && ` · +${more}`}</div><div className="small muted">{VEHICLE_LABEL[req.vehicleType].en} · cash</div></div>
+        <div><div className="small bold" style={{ color: 'var(--brand)', letterSpacing: 1 }}>{t('newRequest')}{more > 0 && ` · +${more}`}</div><div className="small muted">{SERVICE_LABEL[req.service].en} · {VEHICLE_LABEL[req.vehicleType].en} · cash · <span dir="ltr">{req.bookingNo}</span></div></div>
         <div style={{ position: 'relative', width: 56, height: 56 }}>
           <svg width="56" height="56" viewBox="0 0 56 56" aria-hidden="true"><circle cx="28" cy="28" r="24" fill="none" stroke="var(--border)" strokeWidth="5" /><circle cx="28" cy="28" r="24" fill="none" stroke="#f5c76b" strokeWidth="5" strokeLinecap="round" strokeDasharray={150.8} strokeDashoffset={150.8 * (1 - pct)} transform="rotate(-90 28 28)" /></svg>
           <b style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{left}</b>
         </div>
       </div>
-      <div className="row" style={{ alignItems: 'baseline', margin: '6px 0' }}><span style={{ fontSize: 40, fontWeight: 800, letterSpacing: -1 }}>{formatPKR(req.offeredFare)}</span><span className="small" style={{ color: 'var(--ok)', fontWeight: 700 }}>rider's offer</span></div>
+      <div className="row" style={{ alignItems: 'baseline', margin: '6px 0' }}><span style={{ fontSize: 40, fontWeight: 800, letterSpacing: -1 }}>{formatPKR(req.offeredFare)}</span><span className="small" style={{ color: 'var(--ok)', fontWeight: 700 }}>customer's offer</span></div>
       <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
         <span className="chip">Pickup {req.pickupDistanceM != null ? `${fmtDistance(req.pickupDistanceM)}` : ''}{req.pickupEtaS != null ? ` · ${fmtDuration(req.pickupEtaS)}` : ''}</span>
         <span className="chip">Trip {fmtDistance(req.distanceM)} · {fmtDuration(req.durationS)}</span>
         <span className="chip">★ {req.riderRating ?? 'New'} {req.riderName?.split(' ')[0]}</span>
       </div>
+      {req.item && <div className="banner" style={{ marginTop: 10 }}><b>{req.service === 'pickup' ? 'Collect' : 'Deliver'}:</b> {req.item}</div>}
       <div className="card-flat col" style={{ margin: '12px 0', gap: 8 }}>
         <div className="row"><span style={{ width: 12, height: 12, borderRadius: '50%', background: '#22c55e', flex: 'none' }} /><b>{req.pickup.addr}</b></div>
         <div className="row"><span style={{ width: 12, height: 12, borderRadius: 3, background: '#f5c76b', flex: 'none' }} /><b>{req.drop.addr}</b></div>
       </div>
       {sent ? (
-        <div className="center col" style={{ alignItems: 'center', padding: 8 }}><Spinner /><b>Offer sent: {formatPKR(price)}</b><span className="muted small">Waiting for the rider to choose…</span>
+        <div className="center col" style={{ alignItems: 'center', padding: 8 }}><Spinner /><b>Offer sent: {formatPKR(price)}</b><span className="muted small">Waiting for the customer to choose…</span>
           <button className="btn btn-sm" onClick={onSkip}>Withdraw</button></div>
       ) : (
         <>
@@ -266,12 +267,12 @@ function Trip({ order, pos, onDone, onUpdate }: { order: OrderDto; pos: { lat: n
         </div>
         {order.paymentStatus === 'pending' ? (
           <>
-            <div className="banner" style={{ marginBottom: 10 }}>Collect <b>{formatPKR(order.finalFare)}</b> in cash from the rider.</div>
+            <div className="banner" style={{ marginBottom: 10 }}>Collect <b>{formatPKR(order.finalFare)}</b> in cash from the customer.</div>
             <button className="btn btn-primary btn-xl btn-block" disabled={busy} onClick={() => act('cash-confirm')}>{t('collectCash')}</button>
           </>
         ) : !rated ? (
           <>
-            <div className="center bold">Rate {rider?.name?.split(' ')[0] ?? 'the rider'}</div>
+            <div className="center bold">Rate {rider?.name?.split(' ')[0] ?? 'the customer'}</div>
             <Stars value={rating} onChange={setRating} />
             <div className="row" style={{ marginTop: 10 }}>
               <button className="btn grow" onClick={onDone}>Skip</button>
@@ -287,15 +288,27 @@ function Trip({ order, pos, onDone, onUpdate }: { order: OrderDto; pos: { lat: n
     <div className="sheet" style={{ paddingBottom: 90 }}>
       <div className="sheet-grab" />
       <div className="row between" style={{ marginBottom: 8 }}>
-        <div className="heading">{s === 'accepted' ? 'Go to pickup' : s === 'arrived' ? 'Waiting for the rider' : 'Ride in progress'}</div>
+        <div className="heading">{s === 'accepted' ? 'Go to pickup' : s === 'arrived' ? 'Waiting for the customer' : 'Ride in progress'}</div>
         <button className="btn btn-danger btn-sm" onClick={sos}><ShieldAlert size={16} /> SOS</button>
       </div>
       <div className="row">
-        <span className="avatar" style={{ width: 52, height: 52 }}>{(rider?.name ?? '?').slice(0, 2).toUpperCase()}</span>
+        <Avatar name={rider?.name} url={rider?.avatarUrl} size={52} />
         <div className="grow"><div className="bold" style={{ fontSize: 17 }}>{rider?.name}</div><div className="small muted">★ {rider?.rating ?? 'New'}{rider?.phone && <> · <span dir="ltr">{formatPhone(rider.phone)}</span></>}</div></div>
-        {rider?.phone && <a className="btn icon-btn" href={`tel:${rider.phone}`} aria-label="Call rider"><Phone size={22} /></a>}
-        {rider?.phone && <a className="btn icon-btn" href={`sms:${rider.phone}`} aria-label="Message rider"><MessageCircle size={22} /></a>}
+        {rider?.phone && <a className="btn icon-btn" href={`tel:${rider.phone}`} aria-label="Call customer"><Phone size={22} /></a>}
+        {rider?.phone && <a className="btn icon-btn" href={`sms:${rider.phone}`} aria-label="Message customer"><MessageCircle size={22} /></a>}
       </div>
+      {order.meta && (
+        <div className="card-flat col" style={{ margin: '10px 0 0', gap: 4, fontSize: 13 }}>
+          <div className="row between"><b>{order.service === 'pickup' ? 'Collect and bring' : 'Deliver'}</b><span className="chip chip-brand" dir="ltr">{order.bookingNo}</span></div>
+          <div>{order.meta.item}</div>
+          {order.meta.notes && <div className="muted">Note: {order.meta.notes}</div>}
+          {(order.meta.receiverName || order.meta.receiverPhone) && (
+            <div className="row between"><span className="muted">Receiver: {order.meta.receiverName} {order.meta.receiverPhone && <span dir="ltr">{formatPhone(order.meta.receiverPhone)}</span>}</span>
+              {order.meta.receiverPhone && <a className="btn btn-sm" href={`tel:${order.meta.receiverPhone}`}><Phone size={14} /> Call</a>}</div>
+          )}
+        </div>
+      )}
+      {!order.meta && <div className="small muted" style={{ marginTop: 6 }}>Booking <span dir="ltr">{order.bookingNo}</span></div>}
       <div className="row between card-flat" style={{ margin: '10px 0' }}>
         <div><div className="small muted">Fare · cash</div><b style={{ fontSize: 20 }}>{formatPKR(order.agreedFare)}</b></div>
         <div style={{ textAlign: 'end' }}><div className="small muted">You keep</div><b style={{ fontSize: 20, color: 'var(--ok)' }}>{formatPKR(keep)}</b></div>
@@ -315,7 +328,7 @@ function Trip({ order, pos, onDone, onUpdate }: { order: OrderDto; pos: { lat: n
       {s === 'arrived' && (
         <div className="col" style={{ marginTop: 12 }}>
           <div className="small muted center">Waiting {waited} min · first 2 minutes are free</div>
-          <label className="field">Ask the rider for their 4-digit ride PIN
+          <label className="field">Ask the customer for their 4-digit ride PIN
             <input className="input" style={{ fontSize: 28, textAlign: 'center', letterSpacing: 12, fontWeight: 800, minHeight: 64 }} inputMode="numeric" maxLength={4} dir="ltr" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} aria-label="Ride PIN" autoFocus />
           </label>
           <button className="btn btn-primary btn-xl btn-block" disabled={busy || pin.length !== 4} onClick={() => act('start', { pin }).then((o) => o && setPin(''))}>{t('startRide')}</button>
@@ -374,7 +387,7 @@ function EarningsScreen({ earn, reload }: { earn: Earn | null; reload: () => voi
 }
 
 // ---------------- Account ----------------
-function AccountScreen({ me, onLogout, onClose }: { me: Me; onLogout: () => void; onClose: () => void }) {
+function AccountScreen({ me, onLogout, onClose, onChanged }: { me: Me; onLogout: () => void; onClose: () => void; onChanged: () => void }) {
   const { t, lang, setLang } = useI18n(dict);
   const [orders, setOrders] = useState<OrderDto[] | null>(null);
   useEffect(() => { api.get<{ orders: OrderDto[] }>('/api/driver/orders').then((r) => setOrders(r.orders)).catch(() => setOrders([])); }, []);
@@ -382,8 +395,7 @@ function AccountScreen({ me, onLogout, onClose }: { me: Me; onLogout: () => void
   return (
     <div className="screen" style={{ position: 'absolute', inset: 0, zIndex: 650, background: 'var(--bg)', paddingBottom: 100 }}>
       <div className="row between"><h1 className="title">{t('account')}</h1><button className="btn btn-sm" onClick={onClose}>Close</button></div>
-      <div className="card row"><span className="avatar" style={{ width: 60, height: 60 }}>{(me.user.name ?? '?').slice(0, 2).toUpperCase()}</span>
-        <div className="grow"><b style={{ fontSize: 18 }}>{me.user.name}</b><div className="small muted" dir="ltr">{formatPhone(me.user.phone)}</div><div className="small">★ {me.user.rating ?? 'New'}</div></div></div>
+      <div className="card"><ProfileCard api={api} base="/api/driver" user={me.user as UserDto} onUser={() => onChanged()} tripsLabel="Trips" /></div>
       <div className="card col small" style={{ gap: 6 }}>
         <b>Vehicle</b>
         <div className="row between"><span className="muted">Type</span><b>{p.vehicleType ? VEHICLE_LABEL[p.vehicleType].en : '-'}</b></div>
@@ -395,10 +407,10 @@ function AccountScreen({ me, onLogout, onClose }: { me: Me; onLogout: () => void
         <div className="row between"><b>{t('language')}</b><div className="row"><button className={`btn btn-sm ${lang === 'en' ? 'btn-tonal' : ''}`} onClick={() => setLang('en')}>English</button><button className={`btn btn-sm ${lang === 'ur' ? 'btn-tonal' : ''}`} onClick={() => setLang('ur')}>اردو</button></div></div>
         <div className="row between"><b>{t('theme')}</b><ThemeSwitch /></div>
       </div>
-      <div className="col"><b>Recent rides</b>
+      <div className="col"><b>Recent bookings</b>
         {orders === null && <div className="skeleton" style={{ height: 70 }} />}
-        {orders?.length === 0 && <div className="muted small">No rides yet.</div>}
-        {orders?.map((o) => <div key={o.id} className="card small"><div className="row between"><b>{new Date(o.createdAt).toLocaleString('en-PK', { dateStyle: 'medium', timeStyle: 'short' })}</b><span className={`chip ${o.status === 'completed' ? 'chip-ok' : 'chip-danger'}`}>{o.status.replace('_', ' ')}</span></div>
+        {orders?.length === 0 && <div className="muted small">No bookings yet.</div>}
+        {orders?.map((o) => <div key={o.id} className="card small"><div className="row between"><b>{SERVICE_LABEL[o.service].en} · <span dir="ltr">{o.bookingNo}</span></b><span className={`chip ${o.status === 'completed' ? 'chip-ok' : 'chip-danger'}`}>{o.status.replace('_', ' ')}</span></div>
           <div style={{ marginTop: 4 }}>{o.pickup.addr.split(',')[0]} → {o.drop.addr.split(',')[0]}</div><div className="row between muted"><span>{fmtDistance(o.distanceM)}</span><b style={{ color: 'var(--text)' }}>{formatPKR(o.finalFare ?? o.agreedFare)}</b></div></div>)}
       </div>
       <button className="btn btn-danger-ghost btn-block" onClick={onLogout}>{t('logout')}</button>

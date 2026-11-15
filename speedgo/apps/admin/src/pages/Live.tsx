@@ -8,7 +8,7 @@ import { Empty, Kpi, money, statusChip } from '../kit';
 
 interface Stats { activeRides: number; searching: number; onlineDrivers: number; busyDrivers: number; pendingApprovals: number; openSos: number; totalRiders: number; totalDrivers: number; today: { completed: number; gross: number; revenue: number; cancelled: number } }
 interface LiveDriver { id: number; name: string | null; vehicleType: VehicleType; plate: string; lat: number; lng: number; busy: number | boolean; heading?: number | null }
-interface LiveOrder { id: number; status: string; vehicleType: VehicleType; pickup_lat: number; pickup_lng: number; pickup_addr: string; drop_addr: string; driverId: number | null; offeredFare: number; agreedFare: number | null; sos: number }
+interface LiveOrder { id: number; bookingNo: string; service: string; status: string; vehicleType: VehicleType; pickup_lat: number; pickup_lng: number; pickup_addr: string; drop_addr: string; driverId: number | null; offeredFare: number; agreedFare: number | null; sos: number }
 
 export function Live({ sock }: { me: AdminMe; sock: Socket | null }) {
   const [stats, setStats] = useState<Stats | null>(null);
@@ -75,19 +75,19 @@ export function Live({ sock }: { me: AdminMe; sock: Socket | null }) {
           <div className="card col">
             <b>Fleet</b>
             <div className="row between small"><span className="muted"><Car size={14} /> Drivers registered</span><b>{stats?.totalDrivers ?? 0}</b></div>
-            <div className="row between small"><span className="muted"><Wallet size={14} /> Riders registered</span><b>{stats?.totalRiders ?? 0}</b></div>
+            <div className="row between small"><span className="muted"><Wallet size={14} /> Customers registered</span><b>{stats?.totalRiders ?? 0}</b></div>
           </div>
         </aside>
       </section>
 
       <section className="table-wrap">
         <div className="row between" style={{ padding: '14px 18px' }}><b>Active rides</b><span className="small muted">{orders.length} open</span></div>
-        {orders.length === 0 ? <Empty title="No active rides" sub="They appear here the moment a rider requests one." /> : (
+        {orders.length === 0 ? <Empty title="No active rides" sub="They appear here the moment a customer requests one." /> : (
           <table className="table">
-            <thead><tr><th>#</th><th>Vehicle</th><th>Pickup</th><th>Destination</th><th>Fare</th><th>Status</th></tr></thead>
+            <thead><tr><th>Booking</th><th>Vehicle</th><th>Pickup</th><th>Destination</th><th>Fare</th><th>Status</th></tr></thead>
             <tbody>{orders.map((o) => (
               <tr key={o.id} style={o.sos ? { background: 'var(--danger-soft)' } : undefined}>
-                <td><b>{o.id}</b></td><td>{VEHICLE_LABEL[o.vehicleType]?.en}</td><td>{o.pickup_addr.split(',')[0]}</td><td>{o.drop_addr.split(',')[0]}</td><td>{money(o.agreedFare ?? o.offeredFare)}</td><td>{statusChip(o.status)} {o.sos ? <span className="chip chip-danger">SOS</span> : null}</td>
+                <td><b dir="ltr">{o.bookingNo}</b></td><td>{VEHICLE_LABEL[o.vehicleType]?.en}</td><td>{o.pickup_addr.split(',')[0]}</td><td>{o.drop_addr.split(',')[0]}</td><td>{money(o.agreedFare ?? o.offeredFare)}</td><td>{statusChip(o.status)} {o.sos ? <span className="chip chip-danger">SOS</span> : null}</td>
               </tr>))}</tbody>
           </table>
         )}

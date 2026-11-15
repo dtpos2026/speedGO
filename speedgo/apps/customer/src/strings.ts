@@ -27,7 +27,7 @@ export const dict: Dict = {
     payCash: 'Pay cash to the driver',
     rateDriver: 'How was your ride?',
     done: 'Done',
-    history: 'My rides',
+    history: 'My bookings',
     settings: 'Settings',
     language: 'Language',
     theme: 'Theme',

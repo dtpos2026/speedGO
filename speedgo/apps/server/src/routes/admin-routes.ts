@@ -82,11 +82,11 @@ adminRouter.get('/stats', requireAdmin('live:view'), h((_req, res) => {
 
 adminRouter.get('/live', requireAdmin('live:view'), h((_req, res) => {
   const drivers = db.prepare(
-    `SELECT u.id, u.name, d.vehicle_type vehicleType, d.plate, d.lat, d.lng, d.heading,
+    `SELECT u.id, u.name, u.avatar, d.vehicle_type vehicleType, d.plate, d.lat, d.lng, d.heading,
             EXISTS(SELECT 1 FROM orders o WHERE o.driver_id=u.id AND o.status IN ('accepted','arrived','in_progress')) busy
      FROM drivers d JOIN users u ON u.id=d.user_id WHERE d.online=1 AND d.lat IS NOT NULL`).all();
   const orders = db.prepare(
-    `SELECT id,status,vehicle_type vehicleType,pickup_lat,pickup_lng,pickup_addr,drop_lat,drop_lng,drop_addr,driver_id driverId,offered_fare offeredFare,agreed_fare agreedFare,sos
+    `SELECT id,booking_no bookingNo,service,status,vehicle_type vehicleType,pickup_lat,pickup_lng,pickup_addr,drop_lat,drop_lng,drop_addr,driver_id driverId,offered_fare offeredFare,agreed_fare agreedFare,sos
      FROM orders WHERE status IN ('requested','accepted','arrived','in_progress') ORDER BY id DESC LIMIT 200`).all();
   res.json({ drivers, orders });
 }));
@@ -101,7 +101,7 @@ adminRouter.get('/drivers', requireAdmin('drivers:view'), h((req, res) => {
   if (req.query.q) { where.push('(u.name LIKE ? OR u.phone LIKE ? OR d.plate LIKE ?)'); args.push(like(req.query.q), like(req.query.q), like(req.query.q)); }
   if (req.admin!.cityId) { where.push('u.city_id=?'); args.push(req.admin!.cityId); }
   const rows = db.prepare(
-    `SELECT u.id,u.name,u.phone,u.status,u.wallet,u.created_at createdAt,u.rating_sum,u.rating_count,d.vehicle_type vehicleType,d.plate,d.model,d.approval_status approvalStatus,d.online,
+    `SELECT u.id,u.name,u.avatar,u.phone,u.status,u.wallet,u.created_at createdAt,u.rating_sum,u.rating_count,d.vehicle_type vehicleType,d.plate,d.model,d.approval_status approvalStatus,d.online,
             (SELECT COUNT(*) FROM driver_documents x WHERE x.driver_id=u.id) docCount,
             (SELECT COUNT(*) FROM orders o WHERE o.driver_id=u.id AND o.status='completed') trips
      FROM users u JOIN drivers d ON d.user_id=u.id WHERE ${where.join(' AND ')} ORDER BY (d.approval_status='pending') DESC, u.id DESC LIMIT ? OFFSET ?`).all(...args, limit, offset) as Record<string, unknown>[];
@@ -170,7 +170,7 @@ adminRouter.get('/customers', requireAdmin('customers:view'), h((req, res) => {
   const args: unknown[] = [];
   if (req.query.q) { where.push('(u.name LIKE ? OR u.phone LIKE ?)'); args.push(like(req.query.q), like(req.query.q)); }
   const rows = db.prepare(
-    `SELECT u.id,u.name,u.phone,u.status,u.created_at createdAt,u.rating_sum,u.rating_count,
+    `SELECT u.id,u.name,u.avatar,u.phone,u.status,u.created_at createdAt,u.rating_sum,u.rating_count,
             (SELECT COUNT(*) FROM orders o WHERE o.rider_id=u.id AND o.status='completed') trips,
             (SELECT COUNT(*) FROM orders o WHERE o.rider_id=u.id AND o.status='cancelled') cancelled
      FROM users u WHERE ${where.join(' AND ')} ORDER BY u.id DESC LIMIT ? OFFSET ?`).all(...args, limit, offset);
@@ -190,14 +190,16 @@ adminRouter.get('/orders', requireAdmin('rides:view'), h((req, res) => {
   const where: string[] = [];
   const args: unknown[] = [];
   const status = typeof req.query.status === 'string' ? req.query.status : '';
+  const service = typeof req.query.service === 'string' ? req.query.service : '';
+  if (['ride', 'pickup', 'delivery'].includes(service)) { where.push('o.service=?'); args.push(service); }
   if (status === 'active') where.push("o.status IN ('requested','accepted','arrived','in_progress')");
   else if (status) { where.push('o.status=?'); args.push(status); }
-  if (req.query.q) { where.push('(r.name LIKE ? OR r.phone LIKE ? OR dr.name LIKE ? OR o.pickup_addr LIKE ? OR o.drop_addr LIKE ? OR CAST(o.id AS TEXT)=?)'); const q = like(req.query.q); args.push(q, q, q, q, q, String(req.query.q).trim()); }
+  if (req.query.q) { where.push('(r.name LIKE ? OR r.phone LIKE ? OR dr.name LIKE ? OR o.pickup_addr LIKE ? OR o.drop_addr LIKE ? OR CAST(o.id AS TEXT)=? OR o.booking_no LIKE ?)'); const q = like(req.query.q); args.push(q, q, q, q, q, String(req.query.q).trim(), q); }
   if (req.admin!.cityId) { where.push('o.city_id=?'); args.push(req.admin!.cityId); }
   const w = where.length ? 'WHERE ' + where.join(' AND ') : '';
   const rows = db.prepare(
-    `SELECT o.id,o.status,o.vehicle_type vehicleType,o.pickup_addr pickup,o.drop_addr \`drop\`,o.distance_m distanceM,o.offered_fare offeredFare,o.agreed_fare agreedFare,o.final_fare finalFare,o.commission,
-            o.payment_status paymentStatus,o.created_at createdAt,o.sos,r.name riderName,r.phone riderPhone,dr.name driverName
+    `SELECT o.id,o.booking_no bookingNo,o.service,o.meta,o.status,o.vehicle_type vehicleType,o.pickup_addr pickup,o.drop_addr \`drop\`,o.distance_m distanceM,o.offered_fare offeredFare,o.agreed_fare agreedFare,o.final_fare finalFare,o.commission,
+            o.payment_status paymentStatus,o.created_at createdAt,o.sos,r.name riderName,r.avatar riderAvatar,r.phone riderPhone,dr.name driverName,dr.avatar driverAvatar
      FROM orders o JOIN users r ON r.id=o.rider_id LEFT JOIN users dr ON dr.id=o.driver_id ${w} ORDER BY o.id DESC LIMIT ? OFFSET ?`).all(...args, limit, offset);
   const total = (db.prepare(`SELECT COUNT(*) c FROM orders o JOIN users r ON r.id=o.rider_id LEFT JOIN users dr ON dr.id=o.driver_id ${w}`).get(...args) as { c: number }).c;
   res.json({ orders: rows, total });

@@ -38,6 +38,7 @@ export const config = {
   dataDir,
   dbPath: path.join(dataDir, 'speedgo.db'),
   uploadsDir: path.join(dataDir, 'uploads'),
+  avatarsDir: path.join(dataDir, 'avatars'),
   jwtSecret: persistedSecret('JWT_SECRET'),
   /** dev = fixed OTP code (local testing only). sms = real provider (not built yet). */
   otpMode: (env('OTP_MODE') ?? (isProd ? 'sms' : 'dev')) as 'dev' | 'sms',
@@ -56,3 +57,4 @@ if (config.isProd && config.otpMode === 'dev') {
   throw new Error('OTP_MODE=dev is not allowed in production. Configure a real SMS provider first.');
 }
 fs.mkdirSync(config.uploadsDir, { recursive: true });
+fs.mkdirSync(config.avatarsDir, { recursive: true });

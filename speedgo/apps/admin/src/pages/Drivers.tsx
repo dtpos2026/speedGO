@@ -3,12 +3,14 @@ import { Search } from 'lucide-react';
 import { Spinner, useAction, useToast } from '@speedgo/ui';
 import { DOC_LABEL, formatPhone, VEHICLE_LABEL, type DocType, type VehicleType } from '@speedgo/shared';
 import { api, type AdminMe } from '../api';
-import { Drawer, Empty, Pager, SecureImage, TableSkeleton, Tabs, money, statusChip } from '../kit';
+import type { Socket } from 'socket.io-client';
+import { Avatar } from '@speedgo/ui';
+import { Drawer, Empty, Pager, SecureImage, TableSkeleton, Tabs, mediaUrl, money, statusChip, useLiveRefresh } from '../kit';
 
-interface Row { id: number; name: string | null; phone: string; status: string; wallet: number; vehicleType: VehicleType | null; plate: string | null; model: string | null; approvalStatus: string; online: number; docCount: number; trips: number; rating_sum: number; rating_count: number }
+interface Row { id: number; name: string | null; phone: string; status: string; wallet: number; vehicleType: VehicleType | null; plate: string | null; model: string | null; approvalStatus: string; online: number; avatar: string | null; docCount: number; trips: number; rating_sum: number; rating_count: number }
 type Filter = 'pending' | 'approved' | 'rejected' | 'incomplete' | 'all';
 
-export function Drivers({ me, onChange }: { me: AdminMe; onChange: () => void }) {
+export function Drivers({ me, sock, onChange }: { me: AdminMe; sock: Socket | null; onChange: () => void }) {
   const [filter, setFilter] = useState<Filter>('pending');
   const [q, setQ] = useState('');
   const [offset, setOffset] = useState(0);
@@ -24,6 +26,7 @@ export function Drivers({ me, onChange }: { me: AdminMe; onChange: () => void })
     api.get<{ drivers: Row[]; total: number }>(`/api/admin/drivers?${p}`).then((r) => { setRows(r.drivers); setTotal(r.total); }).catch(() => setRows([]));
   }, [filter, q, offset]);
   useEffect(() => { setRows(null); const t = setTimeout(load, q ? 300 : 0); return () => clearTimeout(t); }, [load, q]);
+  useLiveRefresh(sock, ['driver:submitted', 'live:order', 'live:driver'], load);
 
   return (
     <>
@@ -38,7 +41,7 @@ export function Drivers({ me, onChange }: { me: AdminMe; onChange: () => void })
             <thead><tr><th>Driver</th><th>Vehicle</th><th>Docs</th><th>Trips</th><th>Wallet</th><th>Status</th></tr></thead>
             <tbody>{rows.map((d) => (
               <tr key={d.id} className="click" onClick={() => setOpen(d.id)}>
-                <td><b>{d.name ?? 'Unnamed'}</b><br /><span className="small muted" dir="ltr">{formatPhone(d.phone)}</span></td>
+                <td><div className="row"><Avatar name={d.name} url={mediaUrl(d.avatar)} size={36} /><div><b>{d.name ?? 'Unnamed'}</b><br /><span className="small muted" dir="ltr">{formatPhone(d.phone)}</span></div></div></td>
                 <td>{d.vehicleType ? VEHICLE_LABEL[d.vehicleType].en : '-'}<br /><span className="small muted" dir="ltr">{d.plate} {d.model}</span></td>
                 <td>{d.docCount}/8</td><td>{d.trips}</td><td>{money(d.wallet)}</td>
                 <td>{statusChip(d.status === 'blocked' ? 'blocked' : d.approvalStatus)} {d.online ? <span className="chip chip-ok">online</span> : null}</td>

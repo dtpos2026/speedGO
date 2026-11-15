@@ -36,7 +36,7 @@ export function Management() {
   return (
     <>
       <div className="topbar">
-        <div><h1 className="title">Management</h1><div className="muted small">Business performance. Totals only: no rider or driver personal details are shown here.</div></div>
+        <div><h1 className="title">Management</h1><div className="muted small">Business performance. Totals only: no customer or driver personal details are shown here.</div></div>
         <div className="row">
           <div className="row" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: 4 }}>
             {[7, 30, 90].map((n) => <button key={n} className="btn btn-sm" style={{ border: 0, background: days === n ? 'var(--night)' : 'transparent', color: days === n ? '#fff' : 'var(--text)' }} onClick={() => setDays(n)}>{n} days</button>)}
@@ -68,10 +68,10 @@ export function Management() {
           <section className="two-col">
             <div className="narrow card col">
               <b>Growth</b>
-              <div className="row between small"><span className="muted">New riders</span><b>{d.growth.newRiders}</b></div>
+              <div className="row between small"><span className="muted">New customers</span><b>{d.growth.newRiders}</b></div>
               <div className="row between small"><span className="muted">New drivers</span><b>{d.growth.newDrivers}</b></div>
-              <div className="row between small"><span className="muted">Active riders</span><b>{d.growth.activeRiders}</b></div>
-              <div className="row between small"><span className="muted">Repeat riders (2+ rides)</span><b>{d.growth.repeatRiders} ({d.growth.repeatRate}%)</b></div>
+              <div className="row between small"><span className="muted">Active customers</span><b>{d.growth.activeRiders}</b></div>
+              <div className="row between small"><span className="muted">Repeat customers (2+ rides)</span><b>{d.growth.repeatRiders} ({d.growth.repeatRate}%)</b></div>
             </div>
             <div className="narrow card col">
               <b>By vehicle</b>

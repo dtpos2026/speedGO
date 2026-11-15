@@ -313,3 +313,65 @@ describe('cancellation, expiry and blocking', () => {
     await api('POST', '/api/driver/online', driver.token, { online: true, location: PICKUP });
   });
 });
+
+describe('profile photo, pick & drop and delivery', () => {
+  let cust: { token: string; user: any };
+  it('customer uploads a profile photo; it is served; bad files are refused', async () => {
+    cust = await login('rider', '03003330010', 'Photo Customer');
+    const fd = new FormData();
+    fd.append('file', new Blob([PNG], { type: 'image/png' }), 'me.png');
+    const res = await fetch(base + '/api/rider/me/avatar', { method: 'POST', headers: { Authorization: `Bearer ${cust.token}` }, body: fd });
+    assert.equal(res.status, 200);
+    const u = (await res.json() as any).user;
+    assert.match(u.avatarUrl, /^\/api\/media\/avatar\/[a-f0-9]{32}\.png$/);
+    const img = await fetch(base + u.avatarUrl);
+    assert.equal(img.status, 200);
+    assert.equal(img.headers.get('content-type'), 'image/png');
+    const bad = new FormData();
+    bad.append('file', new Blob(['<html>not an image</html>'], { type: 'image/png' }), 'x.png');
+    assert.equal((await fetch(base + '/api/rider/me/avatar', { method: 'POST', headers: { Authorization: `Bearer ${cust.token}` }, body: bad })).status, 400);
+    assert.equal((await fetch(base + '/api/media/avatar/..%2F..%2Fspeedgo.db')).status, 404);
+  });
+
+  it('goods estimates only offer bike, rickshaw and mini', async () => {
+    const e = await api('POST', '/api/rider/estimate', cust.token, { pickup: PICKUP, drop: DROP, service: 'pickup' });
+    assert.deepEqual(e.estimates.map((x: any) => x.vehicleType).sort(), ['bike', 'mini', 'rickshaw']);
+  });
+
+  it('pick & drop needs an item, gets a booking number, and the driver sees it', async () => {
+    const e = await api('POST', '/api/rider/estimate', cust.token, { pickup: PICKUP, drop: DROP, service: 'pickup' });
+    const mini = e.estimates.find((x: any) => x.vehicleType === 'mini').fare;
+    await api('POST', '/api/rider/orders', cust.token, { service: 'pickup', vehicleType: 'mini', pickup: PICKUP, drop: DROP, offeredFare: mini }, 422); // no item
+    await api('POST', '/api/rider/orders', cust.token, { service: 'pickup', vehicleType: 'vip', pickup: PICKUP, drop: DROP, offeredFare: mini, meta: { item: 'Biryani' } }, 422); // cars do not carry goods
+    const dsock = await connect(driver.token);
+    const got = waitFor<any>(dsock, 'order:new');
+    const r = await api('POST', '/api/rider/orders', cust.token, { service: 'pickup', vehicleType: 'mini', pickup: PICKUP, drop: DROP, offeredFare: mini, meta: { item: '2 biryani from Rana Hotel', receiverName: 'Ali', receiverPhone: '0300 5556667' } }, 201);
+    assert.match(r.order.bookingNo, /^SG-PD-\d{6}$/);
+    assert.equal(r.order.service, 'pickup');
+    const req = await got;
+    assert.equal(req.bookingNo, r.order.bookingNo);
+    assert.equal(req.item, '2 biryani from Rana Hotel');
+    assert.equal(req.service, 'pickup');
+    await api('POST', `/api/driver/orders/${r.order.id}/offer`, driver.token, {});
+    const o = await api('GET', `/api/rider/orders/${r.order.id}`, cust.token);
+    const offer = o.order.offers[0];
+    await api('POST', `/api/rider/orders/${r.order.id}/accept-offer`, cust.token, { offerId: offer.id });
+    const d = await api('GET', `/api/driver/orders/${r.order.id}`, driver.token);
+    assert.equal(d.order.meta.receiverPhone, '+923005556667'); // revealed once the job is the driver's
+    await api('POST', `/api/driver/orders/${r.order.id}/cancel`, driver.token, { reason: 'test cleanup' });
+    await api('POST', `/api/rider/orders/${r.order.id}/cancel`, cust.token, { reason: 'test cleanup' }, 409).catch(() => {});
+  });
+
+  it('delivery needs a receiver phone; admin can filter by service and find the booking number', async () => {
+    const e = await api('POST', '/api/rider/estimate', cust.token, { pickup: PICKUP, drop: DROP, service: 'delivery' });
+    const bike = e.estimates.find((x: any) => x.vehicleType === 'bike').fare;
+    const bad = await api('POST', '/api/rider/orders', cust.token, { service: 'delivery', vehicleType: 'bike', pickup: PICKUP, drop: DROP, offeredFare: bike, meta: { item: 'Documents' } }, 422);
+    assert.equal(bad.code, 'RECEIVER_REQUIRED');
+    const r = await api('POST', '/api/rider/orders', cust.token, { service: 'delivery', vehicleType: 'bike', pickup: PICKUP, drop: DROP, offeredFare: bike, meta: { item: 'Documents', receiverName: 'Sara', receiverPhone: '03005556668' } }, 201);
+    assert.match(r.order.bookingNo, /^SG-DL-\d{6}$/);
+    const list = await api('GET', `/api/admin/orders?service=delivery&q=${r.order.bookingNo}`, adminToken);
+    assert.equal(list.orders.length, 1);
+    assert.equal(list.orders[0].bookingNo, r.order.bookingNo);
+    await api('POST', `/api/rider/orders/${r.order.id}/cancel`, cust.token, { reason: 'test cleanup' });
+  });
+});

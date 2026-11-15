@@ -11,6 +11,10 @@ import {
   type DriverSummaryDto,
   type LatLng,
   type OfferDto,
+  type OrderMeta,
+  type ServiceType,
+  bookingNo,
+  GOODS_VEHICLES,
   type OrderDto,
   type OrderStatus,
   type Place,
@@ -57,6 +61,8 @@ export interface OrderRow {
   arrived_at: number | null;
   started_at: number | null;
   completed_at: number | null;
+  booking_no: string | null;
+  meta: string | null;
 }
 interface OfferRow {
   id: number;
@@ -69,6 +75,7 @@ interface OfferRow {
 interface DriverRow {
   id: number;
   name: string | null;
+  avatar: string | null;
   phone: string;
   status: string;
   wallet: number;
@@ -105,12 +112,13 @@ function logEvent(orderId: number, type: string, actor: string, data?: unknown) 
 export function driverRow(id: number): DriverRow | undefined {
   return db
     .prepare(
-      `SELECT u.id,u.name,u.phone,u.status,u.wallet,u.rating_sum,u.rating_count,
+      `SELECT u.id,u.name,u.avatar,u.phone,u.status,u.wallet,u.rating_sum,u.rating_count,
               d.vehicle_type,d.plate,d.model,d.color,d.year,d.approval_status,d.online,d.lat,d.lng,d.heading,d.loc_at
        FROM users u JOIN drivers d ON d.user_id=u.id WHERE u.id=? AND u.role='driver'`,
     )
     .get(id) as DriverRow | undefined;
 }
+export const avatarUrl = (file: string | null) => (file ? `/api/media/avatar/${file}` : null);
 const avg = (sum: number, count: number) => (count > 0 ? Math.round((sum / count) * 10) / 10 : null);
 
 function driverSummary(id: number, withPhone: boolean): DriverSummaryDto | undefined {
@@ -119,6 +127,7 @@ function driverSummary(id: number, withPhone: boolean): DriverSummaryDto | undef
   return {
     id: d.id,
     name: d.name,
+    avatarUrl: avatarUrl(d.avatar),
     ...(withPhone ? { phone: d.phone } : {}),
     rating: avg(d.rating_sum, d.rating_count),
     ratingCount: d.rating_count,
@@ -149,7 +158,9 @@ export function orderDto(o: OrderRow, viewer: 'rider' | 'driver' | 'admin'): Ord
   const assigned = o.driver_id != null;
   const dto: OrderDto = {
     id: o.id,
+    bookingNo: o.booking_no ?? bookingNo(o.service as ServiceType, o.id),
     service: o.service as OrderDto['service'],
+    meta: orderMeta(o, viewer),
     status: o.status,
     vehicleType: o.vehicle_type,
     pickup: { lat: o.pickup_lat, lng: o.pickup_lng, addr: o.pickup_addr },
@@ -180,19 +191,28 @@ export function orderDto(o: OrderRow, viewer: 'rider' | 'driver' | 'admin'): Ord
   };
   if (viewer !== 'driver') dto.pin = o.pin;
   if (assigned && viewer !== 'driver') dto.driver = driverSummary(o.driver_id!, true);
-  const r = db.prepare('SELECT id,name,phone,rating_sum,rating_count FROM users WHERE id=?').get(o.rider_id) as
-    | { id: number; name: string | null; phone: string; rating_sum: number; rating_count: number }
+  const r = db.prepare('SELECT id,name,avatar,phone,rating_sum,rating_count FROM users WHERE id=?').get(o.rider_id) as
+    | { id: number; name: string | null; avatar: string | null; phone: string; rating_sum: number; rating_count: number }
     | undefined;
   if (r) {
     // Drivers only learn the rider's phone once the ride is theirs.
     const showPhone = viewer === 'admin' || (viewer === 'driver' && assigned);
-    dto.rider = { id: r.id, name: r.name, ...(showPhone ? { phone: r.phone } : {}), rating: avg(r.rating_sum, r.rating_count) };
+    dto.rider = { id: r.id, name: r.name, avatarUrl: avatarUrl(r.avatar), ...(showPhone ? { phone: r.phone } : {}), rating: avg(r.rating_sum, r.rating_count) };
   }
   if (viewer === 'rider' && o.status === 'requested') {
     const offers = db.prepare("SELECT * FROM offers WHERE order_id=? AND status='pending' ORDER BY price ASC, created_at ASC").all(o.id) as OfferRow[];
     dto.offers = offers.map((x) => offerDto(x, o));
   }
   return dto;
+}
+
+/** Item details. The receiver's phone is only shown to the assigned driver and to staff. */
+function orderMeta(o: OrderRow, viewer: 'rider' | 'driver' | 'admin'): OrderMeta | null {
+  if (!o.meta) return null;
+  const m = JSON.parse(o.meta) as OrderMeta;
+  const assigned = o.driver_id != null;
+  if (viewer === 'driver' && !assigned) return { item: m.item, notes: m.notes };
+  return m;
 }
 
 function publish(o: OrderRow) {
@@ -225,10 +245,15 @@ function eligibleDrivers(o: OrderRow): { id: number; lat: number; lng: number; d
 }
 
 function requestDto(o: OrderRow, driverLoc: LatLng | null): RequestDto {
-  const rider = db.prepare('SELECT name,rating_sum,rating_count FROM users WHERE id=?').get(o.rider_id) as { name: string | null; rating_sum: number; rating_count: number };
+  const rider = db.prepare('SELECT name,avatar,rating_sum,rating_count FROM users WHERE id=?').get(o.rider_id) as { name: string | null; avatar: string | null; rating_sum: number; rating_count: number };
+  const meta = o.meta ? (JSON.parse(o.meta) as OrderMeta) : null;
   const dist = driverLoc ? Math.round(haversine(driverLoc, { lat: o.pickup_lat, lng: o.pickup_lng })) : null;
   return {
     id: o.id,
+    bookingNo: o.booking_no ?? bookingNo(o.service as ServiceType, o.id),
+    service: o.service as ServiceType,
+    item: meta?.item ?? null,
+    riderAvatarUrl: avatarUrl(rider.avatar),
     vehicleType: o.vehicle_type,
     pickup: { lat: o.pickup_lat, lng: o.pickup_lng, addr: o.pickup_addr },
     drop: { lat: o.drop_lat, lng: o.drop_lng, addr: o.drop_addr },
@@ -273,6 +298,8 @@ export function openRequestsForDriver(driverId: number): RequestDto[] {
 
 // ---------- Rider actions ----------
 export interface CreateOrderInput {
+  service?: ServiceType;
+  meta?: OrderMeta;
   vehicleType: VehicleType;
   pickup: Place;
   drop: Place;
@@ -281,6 +308,13 @@ export interface CreateOrderInput {
 
 export async function createOrder(riderId: number, input: CreateOrderInput): Promise<OrderDto> {
   const s = getSettings();
+  const service: ServiceType = input.service ?? 'ride';
+  if (service !== 'ride') {
+    if (!GOODS_VEHICLES.includes(input.vehicleType)) throw unprocessable('Choose a bike, rickshaw or mini for goods', 'BAD_VEHICLE');
+    if (!input.meta?.item || input.meta.item.trim().length < 2) throw unprocessable('Tell the driver what to collect or deliver', 'ITEM_REQUIRED');
+    if (service === 'delivery' && !input.meta.receiverPhone) throw unprocessable('Enter the receiver\'s phone number', 'RECEIVER_REQUIRED');
+  }
+  const meta = service === 'ride' ? null : JSON.stringify(input.meta);
   const city = cityForPoint(input.pickup);
   if (!city) throw unprocessable('SpeedGo is not available at this pickup location yet', 'OUTSIDE_SERVICE_AREA');
   const r = await route(input.pickup, input.drop);
@@ -296,11 +330,13 @@ export async function createOrder(riderId: number, input: CreateOrderInput): Pro
       .prepare(
         `INSERT INTO orders(service,city_id,rider_id,status,vehicle_type,pickup_lat,pickup_lng,pickup_addr,drop_lat,drop_lng,drop_addr,
            distance_m,duration_s,route,est_fare,offered_fare,pin,expires_at,created_at)
-         VALUES ('ride',?,?,'requested',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         VALUES (?,?,?,'requested',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
-      .run(city.id, riderId, input.vehicleType, input.pickup.lat, input.pickup.lng, input.pickup.addr, input.drop.lat, input.drop.lng, input.drop.addr,
+      .run(service, city.id, riderId, input.vehicleType, input.pickup.lat, input.pickup.lng, input.pickup.addr, input.drop.lat, input.drop.lng, input.drop.addr,
         r.distanceM, r.durationS, JSON.stringify(r.points), est.fare, input.offeredFare, pin, now() + s.request_ttl_s * 1000, now());
-    return Number(info.lastInsertRowid);
+    const newId = Number(info.lastInsertRowid);
+    db.prepare('UPDATE orders SET booking_no=?, meta=? WHERE id=?').run(bookingNo(service, newId), meta, newId);
+    return newId;
   });
   const id = create();
   logEvent(id, 'requested', `rider:${riderId}`, { offered: input.offeredFare, est: est.fare, route: r.source });
@@ -436,10 +472,10 @@ export function driverArrived(driverId: number, orderId: number): OrderDto {
 
 export function driverStart(driverId: number, orderId: number, pin: string): OrderDto {
   const o = assignedTo(driverId, orderId, ['arrived']);
-  if (o.pin_attempts >= 5) throw forbidden('Too many wrong PIN attempts. Ask the rider to contact support.', 'PIN_LOCKED');
+  if (o.pin_attempts >= 5) throw forbidden('Too many wrong PIN attempts. Ask the customer to contact support.', 'PIN_LOCKED');
   if (pin !== o.pin) {
     db.prepare('UPDATE orders SET pin_attempts=pin_attempts+1 WHERE id=?').run(orderId);
-    throw badRequest('That PIN is not correct. Ask the rider to read it again.', 'PIN_WRONG');
+    throw badRequest('That PIN is not correct. Ask the customer to read it again.', 'PIN_WRONG');
   }
   db.prepare("UPDATE orders SET status='in_progress', started_at=? WHERE id=?").run(now(), orderId);
   logEvent(orderId, 'started', `driver:${driverId}`);
@@ -509,7 +545,7 @@ export function rateDriver(riderId: number, orderId: number, rating: number, tag
 
 export function rateRider(driverId: number, orderId: number, rating: number): OrderDto {
   const o = assignedTo(driverId, orderId, ['completed']);
-  if (o.rider_rating != null) throw conflict('You already rated this rider', 'ALREADY_RATED');
+  if (o.rider_rating != null) throw conflict('You already rated this customer', 'ALREADY_RATED');
   db.transaction(() => {
     db.prepare('UPDATE orders SET rider_rating=? WHERE id=?').run(rating, orderId);
     db.prepare('UPDATE users SET rating_sum=rating_sum+?, rating_count=rating_count+1 WHERE id=?').run(rating, o.rider_id);

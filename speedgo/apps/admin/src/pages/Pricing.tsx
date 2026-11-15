@@ -14,8 +14,8 @@ const COLS: { k: keyof Rule; label: string }[] = [
 const SET_FIELDS: { k: keyof Omit<Settings, 'peak_rules'>; label: string; hint: string }[] = [
   { k: 'commission_pct', label: 'Platform commission (%)', hint: 'Taken from the driver wallet when a ride completes' },
   { k: 'min_wallet', label: 'Minimum driver wallet (Rs)', hint: 'Drivers below this cannot go online. 0 = no minimum' },
-  { k: 'offer_min_pct', label: 'Rider may offer below estimate (%)', hint: 'Lowest allowed offer' },
-  { k: 'offer_max_pct', label: 'Rider may offer above estimate (%)', hint: 'Highest allowed offer' },
+  { k: 'offer_min_pct', label: 'Customer may offer below estimate (%)', hint: 'Lowest allowed offer' },
+  { k: 'offer_max_pct', label: 'Customer may offer above estimate (%)', hint: 'Highest allowed offer' },
   { k: 'counter_max_pct', label: 'Driver counter-offer limit (%)', hint: 'Above the estimate' },
   { k: 'dispatch_radius_km', label: 'Search radius (km)', hint: 'How far requests are sent' },
   { k: 'request_ttl_s', label: 'Request lifetime (seconds)', hint: 'Then "no driver found"' },
@@ -85,7 +85,7 @@ export function Pricing({ me }: { me: AdminMe }) {
             <div style={{ height: 1, background: 'rgba(255,255,255,.2)' }} />
             <div className="row between" style={{ alignItems: 'baseline' }}><b>Estimated fare</b><span className="price">{money(preview)}</span></div>
             <div className="small" style={{ color: '#c9bdf2' }}>Driver keeps {money(keep)} · SpeedGo {money(preview - keep)} ({s.commission_pct}%)</div>
-            <div className="small" style={{ color: '#c9bdf2' }}>Rider may offer {money(preview * (1 - s.offer_min_pct / 100))} to {money(preview * (1 + s.offer_max_pct / 100))}</div>
+            <div className="small" style={{ color: '#c9bdf2' }}>Customer may offer {money(preview * (1 - s.offer_min_pct / 100))} to {money(preview * (1 + s.offer_max_pct / 100))}</div>
           </>}
         </div>
       </section>

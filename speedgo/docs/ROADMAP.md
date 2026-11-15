@@ -20,16 +20,16 @@ Exit checklist for Phase 1:
 - Driver wallet top-up through Easypaisa/JazzCash, with admin reconciliation
 - Fully translated Urdu (including admin)
 
-## Phase 2: food pickup orders
-The `orders` table already has a `service` field. Work needed:
-- Merchant (restaurant) app and admin module: menu, prices, opening hours, order accept/ready
-- Customer ordering flow, cart and delivery fee
-- A courier dispatch step reusing the same driver offers, PIN and wallet
-- Per-service commission and reports
+## Phase 2: merchants and food
+Already in Phase 1: Pick & Drop and Delivery bookings, booking numbers, item and receiver details.
+Still to build:
+- Merchant (restaurant / shop) app and admin module: menu, prices, opening hours, accept and ready
+- Customer cart and checkout, so the shop price is shown in the app
+- Per-service commission, reports and promotions
 
-## Phase 3: parcel delivery
-- Parcel size and weight classes, fragile / cash-on-delivery options
-- Pickup and drop proof (photo and PIN), receiver tracking link
+## Phase 3: parcel delivery, complete
+- Parcel size and weight classes, fragile and cash-on-delivery options
+- Pickup and drop proof (photo and PIN), SMS and tracking link for the receiver
 - COD cash settlement in the driver wallet
 - Business accounts and invoices
 
